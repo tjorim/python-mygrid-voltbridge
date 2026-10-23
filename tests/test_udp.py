@@ -170,3 +170,16 @@ def test_cli_exits_quietly_when_the_output_pipe_closes(monkeypatch: pytest.Monke
 
     monkeypatch.setattr(cli.asyncio, "run", lambda coro: (coro.close(), broken(coro))[1])
     assert cli.main(["127.0.0.1"]) == 0
+
+
+def test_zero_average_demand_is_omitted_on_the_wire_but_decoded_as_zero() -> None:
+    """Proto3 drops zero floats; the shorter 146-byte datagrams lack only this field."""
+    payload = load("p1")[8:]
+    assert payload.count(b"\x52\x54") == 1
+    assert payload.count(b"\x5a\x12\x0d\xf8\x53\xe3\x3d") == 1
+    shorter = payload.replace(b"\x52\x54", b"\x52\x4f").replace(b"\x5a\x12\x0d\xf8\x53\xe3\x3d", b"\x5a\x0d")
+    assert len(shorter) == len(payload) - 5
+    broadcast = parse_datagram(rebuild(shorter))
+    assert broadcast.data.avg_demand == 0
+    assert broadcast.data.peak_demand == 2348
+    assert broadcast.data.import_power == parse_datagram(load("p1")).data.import_power

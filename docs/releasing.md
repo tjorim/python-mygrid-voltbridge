@@ -1,6 +1,6 @@
 # Releases
 
-The version comes from git tags (hatch-vcs); there is no version to edit. The package is `mygrid-voltbridge` on PyPI and has not been published yet. Confirm name ownership before the first release.
+The version comes from git tags (hatch-vcs); there is no version to edit. The package is `mygrid-voltbridge` on PyPI and was first published as 0.3.0.
 
 1. Run `uv run ruff check . && uv run ruff format --check . && uv run ty check . && uv run pytest` and `uv build`.
 2. If a device is reachable, run the live smoke tests: `VOLTBRIDGE_HOST=<ip> uv run pytest -m live`. They check the HTTP endpoints, the telegram CRC and the UDP broadcast against a real VoltBridge.

@@ -1,6 +1,6 @@
 # mygrid-voltbridge
 
-A small typed async Python client for the local HTTP API of the **MyGrid VoltBridge** P1 meter adapter. Requires Python **3.12+** and `aiohttp`. Version 0.1.0 has not been published to PyPI.
+A small typed async Python client for the local HTTP API of the **MyGrid VoltBridge** P1 meter adapter. Requires Python **3.12+** and `aiohttp`. Install it with `pip install mygrid-voltbridge` ([PyPI](https://pypi.org/project/mygrid-voltbridge/)).
 
 The API is not documented by the manufacturer. It was reverse-engineered from the device's own status page and verified against one device (firmware `voltbridge` build 15.6); see [docs/api.md](docs/api.md). It may change between firmware versions.
 

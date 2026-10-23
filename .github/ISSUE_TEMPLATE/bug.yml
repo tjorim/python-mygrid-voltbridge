@@ -1,0 +1,52 @@
+name: "Bug report"
+description: "Report a bug"
+labels: ["bug"]
+body:
+- type: markdown
+  attributes:
+    value: "Before you open a new issue, search through the existing issues to see if others have had the same problem. Remove serial numbers, MAC and IP addresses from anything you paste."
+- type: input
+  attributes:
+    label: "Library version"
+    description: "The output of `pip show` for this package."
+  validations:
+    required: true
+- type: input
+  attributes:
+    label: "Python version"
+  validations:
+    required: true
+- type: input
+  attributes:
+    label: "VoltBridge firmware"
+    description: "For example the firmware shown on the status page at http://<address>/."
+- type: textarea
+  attributes:
+    label: "Describe the issue"
+    description: "A clear and concise description of what the issue is."
+  validations:
+    required: true
+- type: textarea
+  attributes:
+    label: "Reproduction steps"
+    value: |
+      1.
+      2.
+      3.
+      ...
+    description: "Without steps to reproduce, it will be hard to fix."
+  validations:
+    required: true
+- type: textarea
+  attributes:
+    label: "Output or logs"
+    description: "Debug logging output, or the raw dump / telegram that is decoded wrongly (redacted)."
+    render: text
+- type: checkboxes
+  attributes:
+    label: "Checklist"
+    options:
+      - label: I have searched the existing issues.
+        required: true
+      - label: This issue only contains 1 issue (if you have multiple issues, open one issue for each).
+        required: true

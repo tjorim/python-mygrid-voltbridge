@@ -42,7 +42,7 @@ Floats are kW/kWh/V/A as on the HTTP API; proto3 omits zeros, so an absent numbe
 | `6.1` / `6.2` | Meter serial / meter version |
 | `10` (live) or `11` (aggregated) | Measurements, below |
 
-Measurements: `1` = {`1` import kW, `2` export kW}; `2`/`3`/`4` = L1/L2/L3 {`1` import kW, `2` export kW, `3` volts, `4` amps} (empty when the phase has no data); `10` = {`1`/`2` import T1/T2 kWh as doubles, `3`/`4` export T1/T2 kWh, `5` tariff}; `11` = {`1` average demand kW, `2` peak demand kW, `3.1` peak timestamp}. On the aggregated stream `1` and `2` hold one-minute averages. 
+Measurements: `1` = {`1` import kW, `2` export kW}; `2`/`3`/`4` = L1/L2/L3 {`1` import kW, `2` export kW, `3` volts, `4` amps} (empty when the phase has no data); `10` = {`1`/`2` import T1/T2 kWh as doubles, `3`/`4` export T1/T2 kWh, `5` tariff}; `11` = {`1` average demand kW, `2` peak demand kW, `3.1` peak timestamp}. On the aggregated stream `1` and `2` hold one-minute averages. Zero floats are omitted (proto3): about one live datagram in a hundred is 146 bytes instead of 151 because the average demand (`11.1`) is exactly 0 at the start of a quarter hour; decoders must treat a missing number as 0. 
 
 Verified against a simultaneous `/api/p1data` read: import power, average demand, voltage, current and T1 energy all matched. **Unverified:** export power and export energy (field numbers inferred from the symmetric import layout, since this installation has no export) and L2/L3.
 

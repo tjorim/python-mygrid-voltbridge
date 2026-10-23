@@ -6,4 +6,4 @@ The version comes from git tags (hatch-vcs); there is no version to edit. The pa
 2. If a device is reachable, run the live smoke tests: `VOLTBRIDGE_HOST=<ip> uv run pytest -m live`. They check the HTTP endpoints, the telegram CRC and the UDP broadcast against a real VoltBridge.
 3. Configure PyPI trusted publishing for `.github/workflows/publish.yml` and the GitHub environment `pypi`. No API token is stored in source.
 4. Push a tag `vX.Y.Z`. The workflow tests, builds, runs `twine check`, attests the distributions and publishes through the protected environment.
-5. Once published, change `ha-mygrid-voltbridge`'s manifest requirement from the GitHub tag to `mygrid-voltbridge==X.Y.Z`.
+5. Once published, set the `mygrid-voltbridge==X.Y.Z` requirement in the `ha-mygrid-core` manifest (the umbrella Home Assistant integration; the HACS repo `ha-mygrid` vendors the library instead).

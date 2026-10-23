@@ -40,8 +40,24 @@ asyncio.run(main())
 | --- | --- |
 | `async_get_power()` | `PowerReading` from `/api/power`; cheap, suitable for ~1 s polling |
 | `async_get_p1_data()` | `P1Data` from `/api/p1data`; poll every few seconds at most |
+| `async_listen(callback, host=...)` | Push updates: UDP broadcasts on 49491, about once a second; see below |
+| `parse_datagram(bytes)` | Decode one UDP datagram into a `P1Broadcast` |
 | `async_reboot()` | `POST /reboot`; never retried |
+
+## Push updates
+
+The device also broadcasts its telegram over UDP roughly once per second, so you do not have to poll:
+
+```python
+from mygrid_voltbridge import async_listen
+
+transport = await async_listen(lambda b: print(b.data.net_power), host="192.168.0.45")
+# ...
+transport.close()
+```
+
+`host` filters by the device's IP; invalid datagrams are dropped. Use `port=49492` for the one-minute average stream. `uv run mygrid-voltbridge 192.168.0.45 --watch` prints the live stream as JSON lines. The broadcast carries no gas reading; use `async_get_p1_data()` for that. Broadcasts must reach the host, so a container or VLAN may need host networking or a broadcast relay. See [docs/api.md](docs/api.md) for the format.
 
 Power is in **W**, energy in **Wh**, voltage in **V**, current in **A**; the device reports kW/kWh and the library converts. Fields the meter does not report are `None`. Errors derive from `VoltBridgeError`: `VoltBridgeConnectionError`, `VoltBridgeResponseError` and `VoltBridgeNoDataError` (no P1 telegram received yet).
 
-The caller owns the `aiohttp` session. There is no authentication or TLS on the device; keep it on the trusted LAN. Per-phase fields other than L1 are parsed by naming pattern and unverified.
+The caller owns the `aiohttp` session. There is no authentication or TLS on the device; keep it on the trusted LAN. Per-phase fields other than L1, and export power/energy on the UDP stream, are unverified.

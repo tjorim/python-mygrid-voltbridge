@@ -159,3 +159,38 @@ async def test_cli(device: TestServer, capsys: pytest.CaptureFixture[str]) -> No
     )
     assert code == 1
     assert "error:" in capsys.readouterr().out
+
+
+def test_discovery_info() -> None:
+    from mygrid_voltbridge import VoltBridgeInfo
+
+    info = VoltBridgeInfo.from_properties(
+        {
+            "model": "Voltbridge P1 Meter",
+            b"manufacturer": b"MyGrid",
+            "device_id": "907069d02d80",
+            "api_path": "/api/p1data",
+            "firmware_version": "app:build-15.6",
+            "hardware_version": "P1Wifi-rev1",
+        }
+    )
+    assert info.device_id == "907069D02D80"
+    assert info.mac_address == "90:70:69:d0:2d:80"
+    assert info.api_path == "/api/p1data"
+
+
+@pytest.mark.parametrize(
+    "properties",
+    [
+        {},
+        {"manufacturer": "MyGrid", "device_id": "907069D02D80", "model": "ModuleTwo"},
+        {"manufacturer": "MyGrid", "device_id": "nope", "model": "Voltbridge"},
+        {"manufacturer": "Other", "device_id": "907069D02D80", "model": "Voltbridge"},
+        {"manufacturer": "MyGrid", "device_id": "907069D02D80"},
+    ],
+)
+def test_discovery_rejects_other_devices(properties: dict[str, str]) -> None:
+    from mygrid_voltbridge import VoltBridgeInfo
+
+    with pytest.raises(VoltBridgeResponseError):
+        VoltBridgeInfo.from_properties(properties)

@@ -42,6 +42,7 @@ asyncio.run(main())
 | `async_get_p1_data()` | `P1Data` from `/api/p1data`; poll every few seconds at most |
 | `async_listen(callback, host=...)` | Push updates: UDP broadcasts on 49491, about once a second; see below |
 | `parse_datagram(bytes)` | Decode one UDP datagram into a `P1Broadcast` |
+| `VoltBridgeInfo.from_properties(txt)` | Identify a device from its `_mygrid._tcp` mDNS TXT record (`device_id` is the MAC) |
 | `async_reboot()` | `POST /reboot`; never retried |
 
 ## Push updates

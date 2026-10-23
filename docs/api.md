@@ -44,3 +44,7 @@ Floats are kW/kWh/V/A as on the HTTP API; proto3 omits zeros, so an absent numbe
 Measurements: `1` = {`1` import kW, `2` export kW}; `2`/`3`/`4` = L1/L2/L3 {`1` import kW, `2` export kW, `3` volts, `4` amps} (empty when the phase has no data); `10` = {`1`/`2` import T1/T2 kWh as doubles, `3`/`4` export T1/T2 kWh, `5` tariff}; `11` = {`1` average demand kW, `2` peak demand kW, `3.1` peak timestamp}. On the aggregated stream `1` and `2` hold one-minute averages. Field `10.12` ({1, 999.9, 999.0}) is undecoded; gas does not appear in the broadcasts.
 
 Verified against a simultaneous `/api/p1data` read: import power, average demand, voltage, current and T1 energy all matched. **Unverified:** export power and export energy (field numbers inferred from the symmetric import layout, since this installation has no export) and L2/L3.
+
+## mDNS
+
+The device advertises `<hostname>.local` (`voltbridge-` + the last three MAC bytes) as `_http._tcp` and `_mygrid._tcp` on port 80. The `_mygrid._tcp` TXT record carries `model=Voltbridge P1 Meter`, `manufacturer=MyGrid`, `device_id` (the MAC without separators), `api_path=/api/p1data`, `firmware_version` and `hardware_version=P1Wifi-rev1`.

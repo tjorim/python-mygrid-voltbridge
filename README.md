@@ -43,6 +43,8 @@ asyncio.run(main())
 | `async_listen(callback, host=...)` | Push updates: UDP broadcasts on 49491, about once a second; see below |
 | `parse_datagram(bytes)` | Decode one UDP datagram into a `P1Broadcast` |
 | `VoltBridgeInfo.from_properties(txt)` | Identify a device from its `_mygrid._tcp` mDNS TXT record (`device_id` is the MAC) |
+| `async_get_telegram()` | `Telegram` from `/api/telegram`: M-Bus devices (gas, **water**), breaker, limiter, monthly peak history, CRC check |
+| `async_get_telegram_text()` | The raw telegram string |
 | `async_reboot()` | `POST /reboot`; never retried |
 
 ## Push updates
@@ -61,4 +63,4 @@ transport.close()
 
 Power is in **W**, energy in **Wh**, voltage in **V**, current in **A**; the device reports kW/kWh and the library converts. Fields the meter does not report are `None`. Errors derive from `VoltBridgeError`: `VoltBridgeConnectionError`, `VoltBridgeResponseError` and `VoltBridgeNoDataError` (no P1 telegram received yet).
 
-The caller owns the `aiohttp` session. There is no authentication or TLS on the device; keep it on the trusted LAN. Per-phase fields other than L1, and export power/energy on the UDP stream, are unverified.
+Pass your own `aiohttp` session, or omit it: the client then creates one limited to a single connection (the device has very little memory) and closes it in `close()` or when leaving `async with VoltBridgeClient(host) as client`. Reads are retried twice with exponential backoff; the reboot is never retried. `VoltBridgeUnsupportedError` means the firmware lacks an endpoint (HTTP 404). There is no authentication or TLS on the device; keep it on the trusted LAN. Per-phase fields other than L1, and export power/energy on the UDP stream, are unverified.

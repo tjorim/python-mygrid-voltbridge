@@ -15,3 +15,7 @@ class VoltBridgeResponseError(VoltBridgeError):
 
 class VoltBridgeNoDataError(VoltBridgeError):
     """The device is up but has not received a P1 telegram yet."""
+
+
+class VoltBridgeUnsupportedError(VoltBridgeError):
+    """The firmware does not provide this endpoint (HTTP 404)."""

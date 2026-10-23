@@ -1,5 +1,6 @@
 import json
 from datetime import UTC, datetime
+from pathlib import Path
 
 import aiohttp
 import pytest
@@ -194,3 +195,125 @@ def test_discovery_rejects_other_devices(properties: dict[str, str]) -> None:
 
     with pytest.raises(VoltBridgeResponseError):
         VoltBridgeInfo.from_properties(properties)
+
+
+TELEGRAM = (
+    (Path(__file__).parent / "fixtures" / "telegram.txt").read_bytes().decode("latin-1")
+)
+
+
+def test_telegram_parsing() -> None:
+    from mygrid_voltbridge import GAS, WATER, parse_telegram
+
+    telegram = parse_telegram(TELEGRAM)
+    assert telegram.crc_valid
+    assert telegram.header == "/FLU5\\000000000_A"
+    assert telegram.timestamp == datetime(2026, 10, 23, 19, 16, 35, tzinfo=UTC)
+    assert telegram.breaker_state == 1
+    assert (telegram.limiter_threshold, telegram.fuse_threshold) == (999900, 999)
+    assert (telegram.avg_demand, telegram.peak_demand) == (26, 2348)
+    assert telegram.peak_demand_at == datetime(2026, 10, 21, 18, 15, tzinfo=UTC)
+    assert [p.power for p in telegram.monthly_peaks] == [2780, 3576, 2811]
+    assert telegram.monthly_peaks[0].peak_at == datetime(
+        2026, 7, 19, 14, 15, tzinfo=UTC
+    )
+    gas = telegram.channel_of("gas")
+    assert gas is not None and gas.device_type == GAS and gas.kind == "gas"
+    assert (gas.reading, gas.unit, gas.valve_state) == (440.448, "m3", 1)
+    assert gas.equipment_id == "GAS0000000"
+    water = telegram.channel_of("water")
+    assert water is not None and water.device_type == WATER
+    assert (water.reading, water.unit, water.channel) == (33.692, "m3", 2)
+    assert water.reading_at == datetime(2026, 10, 23, 19, 15, 30, tzinfo=UTC)
+    assert telegram.channel_of("heat") is None
+    assert telegram.objects["1-0:32.7.0"] == (("237.7*V",),)
+
+
+def test_telegram_detects_corruption_and_garbage() -> None:
+    from mygrid_voltbridge import parse_telegram
+
+    assert not parse_telegram(TELEGRAM.replace("003673.673", "003673.674")).crc_valid
+    for bad in ("", "no telegram here", "!1234/FLU5"):
+        with pytest.raises(VoltBridgeResponseError):
+            parse_telegram(bad)
+
+
+def test_telegram_tolerates_unusual_content() -> None:
+    from mygrid_voltbridge import parse_telegram
+
+    minimal = parse_telegram(
+        "/X\r\n\r\n0-0:1.0.0(991399250000S)\r\n1-0:1.4.0(abc)\r\n0-3:24.1.0(zz)\r\n0-3:96.1.1(zz)\r\n!0000\r\n"
+    )
+    assert not minimal.crc_valid
+    assert minimal.timestamp is None and minimal.avg_demand is None
+    channel = minimal.channels[3]
+    assert (channel.device_type, channel.reading, channel.kind) == (
+        None,
+        None,
+        "unknown",
+    )
+    assert channel.equipment_id == "zz"
+    assert parse_telegram("/X\r\n\r\n!0000").channels == {}
+
+
+async def test_telegram_over_http(
+    device: TestServer,
+    session: aiohttp.ClientSession,
+    routes: dict[str, tuple[int, str]],
+) -> None:
+    routes["/api/telegram"] = (200, TELEGRAM)
+    client = make_client(device, session)
+    assert await client.async_get_telegram_text() == TELEGRAM
+    assert (await client.async_get_telegram()).crc_valid
+
+
+async def test_unsupported_endpoint(
+    device: TestServer, session: aiohttp.ClientSession
+) -> None:
+    from mygrid_voltbridge import VoltBridgeUnsupportedError
+
+    with pytest.raises(VoltBridgeUnsupportedError):
+        await make_client(device, session).async_get_telegram()
+
+
+async def test_client_owns_session_when_none_given(device: TestServer) -> None:
+    async with VoltBridgeClient("127.0.0.1", port=device.port) as client:
+        assert (await client.async_get_power()).net_power == 261
+        assert client._session is not None
+    assert client._session is None
+    await client.close()  # idempotent
+
+
+async def test_reads_retry_with_backoff_but_writes_do_not(
+    device: TestServer, session: aiohttp.ClientSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sleeps: list[float] = []
+
+    async def fake_sleep(delay: float) -> None:
+        sleeps.append(delay)
+
+    monkeypatch.setattr("mygrid_voltbridge.client.asyncio.sleep", fake_sleep)
+    calls = 0
+    real = session.request
+
+    def flaky(*args: object, **kwargs: object):  # type: ignore[no-untyped-def]
+        nonlocal calls
+        calls += 1
+        if calls < 3:
+            raise aiohttp.ClientConnectionError("boom")
+        return real(*args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(session, "request", flaky)
+    assert (await make_client(device, session).async_get_power()).net_power == 261
+    assert calls == 3 and sleeps == [0.25, 0.5]
+
+    calls = 0
+    sleeps.clear()
+    monkeypatch.setattr(
+        session,
+        "request",
+        lambda *a, **k: (_ for _ in ()).throw(aiohttp.ClientConnectionError("x")),
+    )
+    with pytest.raises(VoltBridgeConnectionError):
+        await make_client(device, session).async_reboot()
+    assert sleeps == []

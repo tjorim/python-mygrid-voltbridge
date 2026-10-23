@@ -7,11 +7,29 @@ from .exceptions import (
     VoltBridgeError,
     VoltBridgeNoDataError,
     VoltBridgeResponseError,
+    VoltBridgeUnsupportedError,
 )
 from .models import P1Data, PhaseData, PowerReading
+from .telegram import (
+    GAS,
+    HEAT,
+    WATER,
+    MBusChannel,
+    MonthlyPeak,
+    Telegram,
+    parse_telegram,
+)
 from .udp import BroadcastStream, P1Broadcast, async_listen, parse_datagram
 
 __all__ = [
+    "GAS",
+    "HEAT",
+    "WATER",
+    "MBusChannel",
+    "MonthlyPeak",
+    "Telegram",
+    "VoltBridgeUnsupportedError",
+    "parse_telegram",
     "SERVICE_TYPE",
     "VoltBridgeInfo",
     "BroadcastStream",

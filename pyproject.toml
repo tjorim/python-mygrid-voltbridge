@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "mygrid-voltbridge"
-version = "0.1.0"
+version = "0.2.0"
 description = "Typed async HTTP client for the MyGrid VoltBridge P1 meter"
 readme = "README.md"
 requires-python = ">=3.12"

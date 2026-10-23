@@ -55,6 +55,8 @@ def main(argv: list[str] | None = None) -> int:
                 asyncio.run(_watch(args.host, args.port if args.port != HTTP_PORT else P1_PORT))
             return 0
         print(asyncio.run(_run(args.host, args.port, power_only=args.power)))  # noqa: T201
+    except BrokenPipeError:  # e.g. piped into head
+        return 0
     except VoltBridgeError as err:
         print(f"error: {err}")  # noqa: T201
         return 1

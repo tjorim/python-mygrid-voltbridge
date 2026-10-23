@@ -160,3 +160,13 @@ async def test_cli_watch(capsys: pytest.CaptureFixture[str], monkeypatch: pytest
     )
     assert cli.main(["127.0.0.1", "--watch"]) == 0
     _ = json
+
+
+def test_cli_exits_quietly_when_the_output_pipe_closes(monkeypatch: pytest.MonkeyPatch) -> None:
+    from mygrid_voltbridge import cli
+
+    def broken(_coro: object) -> None:
+        raise BrokenPipeError
+
+    monkeypatch.setattr(cli.asyncio, "run", lambda coro: (coro.close(), broken(coro))[1])
+    assert cli.main(["127.0.0.1"]) == 0

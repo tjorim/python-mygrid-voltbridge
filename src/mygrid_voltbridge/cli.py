@@ -4,13 +4,13 @@ import argparse
 import asyncio
 import contextlib
 import dataclasses
-import json
 from datetime import datetime
+import json
 from typing import Any
 
 import aiohttp
 
-from .client import VoltBridgeClient
+from .client import HTTP_PORT, VoltBridgeClient
 from .exceptions import VoltBridgeError
 from .udp import P1_PORT, P1Broadcast, async_listen
 
@@ -21,12 +21,10 @@ def _default(value: Any) -> Any:
     raise TypeError(type(value))
 
 
-async def _run(host: str, port: int, power_only: bool) -> str:
+async def _run(host: str, port: int, *, power_only: bool) -> str:
     async with aiohttp.ClientSession() as session:
         client = VoltBridgeClient(host, session, port=port)
-        reading = await (
-            client.async_get_power() if power_only else client.async_get_p1_data()
-        )
+        reading = await (client.async_get_power() if power_only else client.async_get_p1_data())
     return json.dumps(dataclasses.asdict(reading), default=_default, indent=2)
 
 
@@ -36,7 +34,7 @@ async def _watch(host: str, port: int) -> None:
     try:
         while True:
             broadcast = await queue.get()
-            print(
+            print(  # noqa: T201 - the CLI exists to print
                 json.dumps(dataclasses.asdict(broadcast), default=_default), flush=True
             )
     finally:
@@ -44,26 +42,21 @@ async def _watch(host: str, port: int) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(
-        description="Read a MyGrid VoltBridge (read-only)."
-    )
+    """Run the command line helper and return the exit code."""
+    parser = argparse.ArgumentParser(description="Read a MyGrid VoltBridge (read-only).")
     parser.add_argument("host")
-    parser.add_argument("--port", type=int, default=80)
-    parser.add_argument(
-        "--watch", action="store_true", help="stream UDP broadcasts as JSON lines"
-    )
+    parser.add_argument("--port", type=int, default=HTTP_PORT)
+    parser.add_argument("--watch", action="store_true", help="stream UDP broadcasts as JSON lines")
     parser.add_argument("--power", action="store_true", help="only instantaneous power")
     args = parser.parse_args(argv)
     try:
         if args.watch:
             with contextlib.suppress(KeyboardInterrupt):
-                asyncio.run(
-                    _watch(args.host, args.port if args.port != 80 else P1_PORT)
-                )
+                asyncio.run(_watch(args.host, args.port if args.port != HTTP_PORT else P1_PORT))
             return 0
-        print(asyncio.run(_run(args.host, args.port, args.power)))
+        print(asyncio.run(_run(args.host, args.port, power_only=args.power)))  # noqa: T201
     except VoltBridgeError as err:
-        print(f"error: {err}")
+        print(f"error: {err}")  # noqa: T201
         return 1
     return 0
 

@@ -8,13 +8,13 @@ a fixed field map instead of with generated protobuf code.
 """
 
 import asyncio
-import logging
-import struct
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import IntEnum
-from typing import Any
+import logging
+import struct
+from typing import Any, override
 
 from .exceptions import VoltBridgeResponseError
 from .models import P1Data, PhaseData
@@ -25,11 +25,16 @@ P1_PORT = 49491
 AGGREGATED_PORT = 49492
 _MAGIC = b"P1"
 _HEADER = 8
+_MAX_VARINT_SHIFT = 63
+_LENGTH_DELIMITED = 2  # protobuf wire type
+_PEAK_FIELD = 2  # field 2 of the demand message
 
 _Fields = dict[int, list[Any]]
 
 
 class BroadcastStream(IntEnum):
+    """The stream a datagram belongs to (header byte 3)."""
+
     P1 = 0
     AGGREGATED = 1
 
@@ -63,8 +68,9 @@ def _crc16_arc(data: bytes) -> int:
 def _varint(buf: bytes, pos: int) -> tuple[int, int]:
     result = shift = 0
     while True:
-        if pos >= len(buf) or shift > 63:
-            raise VoltBridgeResponseError("truncated varint")
+        if pos >= len(buf) or shift > _MAX_VARINT_SHIFT:
+            msg = "truncated varint"
+            raise VoltBridgeResponseError(msg)
         byte = buf[pos]
         pos += 1
         result |= (byte & 0x7F) << shift
@@ -86,25 +92,28 @@ def _read(buf: bytes) -> _Fields:
         elif wire in (1, 5):
             size = 8 if wire == 1 else 4
             if pos + size > len(buf):
-                raise VoltBridgeResponseError("truncated fixed-width field")
+                msg = "truncated fixed-width field"
+                raise VoltBridgeResponseError(msg)
             fmt = "<d" if wire == 1 else "<f"
             (value,) = struct.unpack_from(fmt, buf, pos)
             pos += size
-        elif wire == 2:
+        elif wire == _LENGTH_DELIMITED:
             size, pos = _varint(buf, pos)
             if pos + size > len(buf):
-                raise VoltBridgeResponseError("truncated length-delimited field")
+                msg = "truncated length-delimited field"
+                raise VoltBridgeResponseError(msg)
             value = buf[pos : pos + size]
             pos += size
         else:
-            raise VoltBridgeResponseError(f"unsupported wire type {wire}")
+            msg = f"unsupported wire type {wire}"
+            raise VoltBridgeResponseError(msg)
         fields.setdefault(number, []).append(value)
     return fields
 
 
 def _msg(fields: _Fields, number: int) -> _Fields | None:
     values = fields.get(number)
-    if not values or not isinstance(values[-1], bytes):
+    if values is None or not isinstance(values[-1], bytes):
         return None
     return _read(values[-1])
 
@@ -115,13 +124,14 @@ def _num(fields: _Fields | None, number: int) -> float:
         return 0.0
     value = fields.get(number, [0.0])[-1]
     if isinstance(value, bytes):
-        raise VoltBridgeResponseError(f"field {number} is not a number")
+        msg = f"field {number} is not a number"
+        raise VoltBridgeResponseError(msg)
     return float(value)
 
 
 def _text(fields: _Fields | None, number: int) -> str | None:
-    values = (fields or {}).get(number)
-    if not values or not isinstance(values[-1], bytes):
+    values = ({} if fields is None else fields).get(number)
+    if values is None or not isinstance(values[-1], bytes):
         return None
     return values[-1].decode("utf-8", errors="replace") or None
 
@@ -131,7 +141,7 @@ def _milli(value: float) -> int:
 
 
 def _phase(fields: _Fields | None) -> PhaseData | None:
-    if not fields:
+    if fields is None or len(fields) == 0:
         return None
     return PhaseData(
         import_power=_milli(_num(fields, 1)),
@@ -144,34 +154,40 @@ def _phase(fields: _Fields | None) -> PhaseData | None:
 def parse_datagram(datagram: bytes) -> P1Broadcast:
     """Decode one UDP datagram, raising ``VoltBridgeResponseError`` if invalid."""
     if len(datagram) < _HEADER or datagram[:2] != _MAGIC or datagram[2] != 1:
-        raise VoltBridgeResponseError("not a VoltBridge datagram")
+        msg = "not a VoltBridge datagram"
+        raise VoltBridgeResponseError(msg)
     try:
         stream = BroadcastStream(datagram[3])
     except ValueError as err:
-        raise VoltBridgeResponseError(f"unknown stream {datagram[3]}") from err
+        msg = f"unknown stream {datagram[3]}"
+        raise VoltBridgeResponseError(msg) from err
     payload = datagram[_HEADER:]
     if datagram[5] != len(payload):
-        raise VoltBridgeResponseError("payload length mismatch")
+        msg = "payload length mismatch"
+        raise VoltBridgeResponseError(msg)
     if int.from_bytes(datagram[6:8], "big") != _crc16_arc(payload):
-        raise VoltBridgeResponseError("checksum mismatch")
+        msg = "checksum mismatch"
+        raise VoltBridgeResponseError(msg)
 
     envelope = _read(payload)
     seconds = _num(_msg(envelope, 1), 1)
     if not seconds:
-        raise VoltBridgeResponseError("missing timestamp")
+        msg = "missing timestamp"
+        raise VoltBridgeResponseError(msg)
     rssi_raw = _msg(envelope, 5)
     rssi = None
     if rssi_raw is not None:
         raw = rssi_raw.get(1, [0])[-1]
         if not isinstance(raw, int):
-            raise VoltBridgeResponseError("rssi is not an integer")
+            msg = "rssi is not an integer"
+            raise VoltBridgeResponseError(msg)
         rssi = raw - (1 << 64) if raw >= 1 << 63 else raw
     meter = _msg(envelope, 6)
     body = _msg(envelope, 10 if stream is BroadcastStream.P1 else 11) or {}
 
     totals = _msg(body, 10)
     demand = _msg(body, 11)
-    peak_at = _msg(demand, 3) if demand else None
+    peak_at = _msg(demand, 3) if demand is not None else None
     power = _msg(body, 1)
     imported, exported = _milli(_num(power, 1)), _milli(_num(power, 2))
     live = stream is BroadcastStream.P1
@@ -186,12 +202,8 @@ def parse_datagram(datagram: bytes) -> P1Broadcast:
         avg_import_1min=None if live else imported,
         avg_export_1min=None if live else exported,
         avg_demand=_milli(_num(demand, 1)) if demand is not None else None,
-        peak_demand=_milli(_num(demand, 2)) if demand and 2 in demand else None,
-        peak_demand_at=(
-            datetime.fromtimestamp(int(_num(peak_at, 1)), UTC)
-            if peak_at is not None
-            else None
-        ),
+        peak_demand=_milli(_num(demand, 2)) if demand is not None and _PEAK_FIELD in demand else None,
+        peak_demand_at=(datetime.fromtimestamp(int(_num(peak_at, 1)), UTC) if peak_at is not None else None),
         tariff=int(_num(totals, 5)) if totals is not None else None,
         energy_import_t1=_milli(_num(totals, 1)) if totals is not None else None,
         energy_import_t2=_milli(_num(totals, 2)) if totals is not None else None,
@@ -211,12 +223,11 @@ def parse_datagram(datagram: bytes) -> P1Broadcast:
 
 
 class _Protocol(asyncio.DatagramProtocol):
-    def __init__(
-        self, callback: Callable[[P1Broadcast], None], host: str | None
-    ) -> None:
+    def __init__(self, callback: Callable[[P1Broadcast], None], host: str | None) -> None:
         self._callback = callback
         self._host = host
 
+    @override
     def datagram_received(self, data: bytes, addr: tuple[str, int]) -> None:
         if self._host is not None and addr[0] != self._host:
             return
@@ -233,7 +244,7 @@ async def async_listen(
     *,
     host: str | None = None,
     port: int = P1_PORT,
-    bind: str = "0.0.0.0",
+    bind: str = "0.0.0.0",  # noqa: S104 - broadcasts arrive on any interface
 ) -> asyncio.DatagramTransport:
     """Listen for broadcasts; ``host`` filters by the device's IP.
 

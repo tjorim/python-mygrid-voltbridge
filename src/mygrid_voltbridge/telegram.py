@@ -5,10 +5,10 @@ carries every M-Bus device (water, heat), the breaker and limiter state and
 the monthly peak history. Unknown OBIS codes stay available in ``objects``.
 """
 
-import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta, timezone
+import re
 
 from .exceptions import VoltBridgeResponseError
 
@@ -38,9 +38,8 @@ class MBusChannel:
 
     @property
     def kind(self) -> str:
-        return {GAS: "gas", HEAT: "heat", WATER: "water"}.get(
-            self.device_type or 0, "unknown"
-        )
+        """Return ``gas``, ``water``, ``heat`` or ``unknown``."""
+        return {GAS: "gas", HEAT: "heat", WATER: "water"}.get(self.device_type or 0, "unknown")
 
 
 @dataclass(frozen=True)
@@ -70,10 +69,8 @@ class Telegram:
     objects: Mapping[str, tuple[tuple[str, ...], ...]] = field(default_factory=dict)
 
     def channel_of(self, kind: str) -> MBusChannel | None:
-        """The first M-Bus device of a kind (``gas``, ``water``, ``heat``)."""
-        return next(
-            (c for _, c in sorted(self.channels.items()) if c.kind == kind), None
-        )
+        """Return the first M-Bus device of a kind (``gas``, ``water``, ``heat``)."""
+        return next((c for _, c in sorted(self.channels.items()) if c.kind == kind), None)
 
 
 def _crc16(data: bytes) -> int:
@@ -107,7 +104,7 @@ def _timestamp(text: str) -> datetime | None:
 
 
 def _quantity(text: str, unit: str) -> float | None:
-    """A value in the given unit family, or ``None`` if absent or malformed."""
+    """Return a value in the given unit, or ``None`` if absent or malformed."""
     match = _VALUE.match(text)
     return float(match.group(1)) if match and match.group(2) == unit else None
 
@@ -117,14 +114,12 @@ def _kilo(text: str, unit: str) -> int | None:
     return None if value is None else round(value * 1000)
 
 
-def _first(
-    objects: Mapping[str, tuple[tuple[str, ...], ...]], code: str
-) -> tuple[str, ...]:
+def _first(objects: Mapping[str, tuple[tuple[str, ...], ...]], code: str) -> tuple[str, ...]:
     return objects.get(code, ((),))[0]
 
 
 def _int(text: str | None) -> int | None:
-    return int(text) if text and text.lstrip("-").isdigit() else None
+    return int(text) if text is not None and text.lstrip("-").isdigit() else None
 
 
 def _hex_text(text: str) -> str:
@@ -157,7 +152,7 @@ def _channels(
         reading_groups: tuple[str, ...] = ()
         for code, values in objects.items():
             match = _MBUS.match(code)
-            if match and int(match.group(1)) == number and match.group(2) in ("2",):
+            if match and int(match.group(1)) == number and match.group(2) == "2":
                 reading_groups = values[0]
         reading_at = _timestamp(reading_groups[0]) if reading_groups else None
         quantity = reading_groups[1] if len(reading_groups) > 1 else ""
@@ -181,7 +176,8 @@ def parse_telegram(text: str) -> Telegram:
     """Decode a telegram; raises ``VoltBridgeResponseError`` if it is not one."""
     start, bang = text.find("/"), text.find("!")
     if start < 0 or bang < start:
-        raise VoltBridgeResponseError("not a P1 telegram")
+        msg = "not a P1 telegram"
+        raise VoltBridgeResponseError(msg)
     body = text[start : bang + 1]
     expected = text[bang + 1 : bang + 5]
     crc_valid = f"{_crc16(body.encode('latin-1')):04X}" == expected.upper()
@@ -206,13 +202,9 @@ def parse_telegram(text: str) -> Telegram:
         header=header,
         crc_valid=crc_valid,
         timestamp=_timestamp(timestamp[0]) if timestamp else None,
-        breaker_state=_int(_first(objects, "0-0:96.3.10")[0])
-        if "0-0:96.3.10" in objects
-        else None,
+        breaker_state=_int(_first(objects, "0-0:96.3.10")[0]) if "0-0:96.3.10" in objects else None,
         limiter_threshold=_kilo(limiter[0], "kW") if limiter else None,
-        fuse_threshold=round(q)
-        if fuse and (q := _quantity(fuse[0], "A")) is not None
-        else None,
+        fuse_threshold=round(q) if fuse and (q := _quantity(fuse[0], "A")) is not None else None,
         avg_demand=_kilo(demand[0], "kW") if demand else None,
         peak_demand=_kilo(peak[1], "kW") if len(peak) > 1 else None,
         peak_demand_at=_timestamp(peak[0]) if peak else None,

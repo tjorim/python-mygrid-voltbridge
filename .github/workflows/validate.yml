@@ -1,10 +1,24 @@
 name: Validate library
 on:
   push:
+    branches: [main]
   pull_request:
 permissions:
   contents: read
 jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0  # hatch-vcs derives the version from tags
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884
+        with:
+          enable-cache: true
+      - run: uv run --locked ruff check .
+      - run: uv run --locked ruff format --check .
+      - run: uv run --locked ty check .
   tests:
     runs-on: ubuntu-latest
     strategy:
@@ -12,13 +26,29 @@ jobs:
         python: ['3.12', '3.13', '3.14']
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
       - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884
         with:
           enable-cache: true
           python-version: ${{ matrix.python }}
-      - run: uv sync --frozen --python '${{ matrix.python }}'
-      - run: uv run --python '${{ matrix.python }}' ruff check .
-      - run: uv run --python '${{ matrix.python }}' ruff format --check .
-      - run: uv run --python '${{ matrix.python }}' mypy
-      - run: uv run --python '${{ matrix.python }}' pytest
-      - run: uv build --python '${{ matrix.python }}'
+      - run: uv run --locked pytest --cov=mygrid_voltbridge --cov-report=term-missing:skip-covered
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884
+        with:
+          python-version: '3.12'
+      - run: uv build
+      - run: uv run --locked twine check dist/*
+      - name: Install the built wheel into a fresh environment
+        run: |
+          uv venv wheel-check
+          uv pip install --python wheel-check/bin/python dist/*.whl
+      - run: wheel-check/bin/python -I -c "import mygrid_voltbridge; assert mygrid_voltbridge.VoltBridgeClient and mygrid_voltbridge.parse_telegram"
+      - run: wheel-check/bin/python -I -c "import pathlib, mygrid_voltbridge; assert (pathlib.Path(mygrid_voltbridge.__file__).parent / 'py.typed').is_file()"

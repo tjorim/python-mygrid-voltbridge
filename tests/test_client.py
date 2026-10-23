@@ -1,10 +1,13 @@
-import json
+import asyncio
+import dataclasses
 from datetime import UTC, datetime
+import json
 from pathlib import Path
+from typing import Any
 
 import aiohttp
-import pytest
 from aiohttp.test_utils import TestServer
+import pytest
 
 from mygrid_voltbridge import (
     P1Data,
@@ -16,24 +19,29 @@ from mygrid_voltbridge import (
 )
 from mygrid_voltbridge.cli import main
 from mygrid_voltbridge.models import PhaseData
+from tests.fake_device import FakeDevice
+
+
+def port_of(server: TestServer) -> int:
+    port = server.port
+    assert isinstance(port, int)
+    return port
 
 
 def make_client(
-    server: TestServer, session: aiohttp.ClientSession, **kwargs: float
+    server: TestServer, session: aiohttp.ClientSession, *, retries: int = 2, timeout: float = 5.0
 ) -> VoltBridgeClient:
-    return VoltBridgeClient("127.0.0.1", session, port=server.port, **kwargs)
-
-
-async def test_power(device: TestServer, session: aiohttp.ClientSession) -> None:
-    reading = await make_client(device, session).async_get_power()
-    assert reading == PowerReading(
-        net_power=261, import_power=261, export_power=0, tariff=1
+    return VoltBridgeClient(
+        "127.0.0.1", session, port=port_of(server), retries=retries, timeout=timeout, min_request_interval=0
     )
 
 
-async def test_p1_data_real_capture(
-    device: TestServer, session: aiohttp.ClientSession
-) -> None:
+async def test_power(device: FakeDevice, session: aiohttp.ClientSession) -> None:
+    reading = await make_client(device, session).async_get_power()
+    assert reading == PowerReading(net_power=261, import_power=261, export_power=0, tariff=1)
+
+
+async def test_p1_data_real_capture(device: FakeDevice, session: aiohttp.ClientSession) -> None:
     data = await make_client(device, session).async_get_p1_data()
     assert data.meter_serial == "1SAG0000000000"
     assert data.meter_version == "50217"
@@ -53,17 +61,17 @@ async def test_p1_data_real_capture(
 
 
 async def test_optional_fields_missing(
-    device: TestServer,
+    device: FakeDevice,
     session: aiohttp.ClientSession,
     routes: dict[str, tuple[int, str]],
 ) -> None:
     routes["/api/p1data"] = (200, json.dumps({"hasData": True}))
     data = await make_client(device, session).async_get_p1_data()
-    assert data == P1Data(*[None] * 16)
+    assert data == P1Data(**dict.fromkeys(_P1_SCALAR_FIELDS), phases={})
 
 
 async def test_no_data(
-    device: TestServer,
+    device: FakeDevice,
     session: aiohttp.ClientSession,
     routes: dict[str, tuple[int, str]],
 ) -> None:
@@ -78,13 +86,11 @@ async def test_no_data(
         "not json",
         "[]",
         json.dumps({"hasData": True, "netPowerW": 1}),
-        json.dumps(
-            {"hasData": True, "netPowerW": "x", "importPowerW": 0, "exportPowerW": 0}
-        ),
+        json.dumps({"hasData": True, "netPowerW": "x", "importPowerW": 0, "exportPowerW": 0}),
     ],
 )
 async def test_bad_power_bodies(
-    device: TestServer,
+    device: FakeDevice,
     session: aiohttp.ClientSession,
     routes: dict[str, tuple[int, str]],
     body: str,
@@ -95,7 +101,7 @@ async def test_bad_power_bodies(
 
 
 async def test_bad_timestamp(
-    device: TestServer,
+    device: FakeDevice,
     session: aiohttp.ClientSession,
     routes: dict[str, tuple[int, str]],
 ) -> None:
@@ -108,13 +114,14 @@ async def test_bad_timestamp(
 
 
 async def test_http_error(
-    device: TestServer,
+    device: FakeDevice,
     session: aiohttp.ClientSession,
     routes: dict[str, tuple[int, str]],
 ) -> None:
-    routes["/api/power"] = (500, "boom")
-    with pytest.raises(VoltBridgeResponseError, match="HTTP 500"):
+    routes["/api/power"] = (418, "teapot")
+    with pytest.raises(VoltBridgeResponseError, match="HTTP 418") as raised:
         await make_client(device, session).async_get_power()
+    assert raised.value.status == 418
 
 
 async def test_unreachable(session: aiohttp.ClientSession) -> None:
@@ -123,9 +130,7 @@ async def test_unreachable(session: aiohttp.ClientSession) -> None:
         await client.async_get_power()
 
 
-async def test_timeout(
-    device: TestServer, session: aiohttp.ClientSession, monkeypatch: pytest.MonkeyPatch
-) -> None:
+async def test_timeout(device: FakeDevice, session: aiohttp.ClientSession, monkeypatch: pytest.MonkeyPatch) -> None:
     class TimesOut:
         async def __aenter__(self) -> None:
             raise TimeoutError
@@ -141,23 +146,19 @@ async def test_timeout(
         await make_client(device, session).async_get_power()
 
 
-async def test_reboot(device: TestServer, session: aiohttp.ClientSession) -> None:
+async def test_reboot(device: FakeDevice, session: aiohttp.ClientSession) -> None:
     await make_client(device, session).async_reboot()
-    assert device.rebooted == ["x"]  # type: ignore[attr-defined]
+    assert device.rebooted == ["x"]
 
 
-async def test_cli(device: TestServer, capsys: pytest.CaptureFixture[str]) -> None:
+async def test_cli(device: FakeDevice, capsys: pytest.CaptureFixture[str]) -> None:
     import asyncio
 
     loop = asyncio.get_running_loop()
-    code = await loop.run_in_executor(
-        None, main, ["127.0.0.1", "--port", str(device.port)]
-    )
+    code = await loop.run_in_executor(None, main, ["127.0.0.1", "--port", str(device.port)])
     assert code == 0
     assert json.loads(capsys.readouterr().out)["meter_serial"] == "1SAG0000000000"
-    code = await loop.run_in_executor(
-        None, main, ["127.0.0.1", "--port", "1", "--power"]
-    )
+    code = await loop.run_in_executor(None, main, ["127.0.0.1", "--port", "1", "--power"])
     assert code == 1
     assert "error:" in capsys.readouterr().out
 
@@ -190,16 +191,15 @@ def test_discovery_info() -> None:
         {"manufacturer": "MyGrid", "device_id": "907069D02D80"},
     ],
 )
-def test_discovery_rejects_other_devices(properties: dict[str, str]) -> None:
+def test_discovery_rejects_other_devices(properties: dict[str | bytes, str | bytes | None]) -> None:
     from mygrid_voltbridge import VoltBridgeInfo
 
     with pytest.raises(VoltBridgeResponseError):
         VoltBridgeInfo.from_properties(properties)
 
 
-TELEGRAM = (
-    (Path(__file__).parent / "fixtures" / "telegram.txt").read_bytes().decode("latin-1")
-)
+_P1_SCALAR_FIELDS = tuple(f.name for f in dataclasses.fields(P1Data) if f.name != "phases")
+TELEGRAM = (Path(__file__).parent / "fixtures" / "telegram.txt").read_bytes().decode("latin-1")
 
 
 def test_telegram_parsing() -> None:
@@ -214,15 +214,16 @@ def test_telegram_parsing() -> None:
     assert (telegram.avg_demand, telegram.peak_demand) == (26, 2348)
     assert telegram.peak_demand_at == datetime(2026, 10, 21, 18, 15, tzinfo=UTC)
     assert [p.power for p in telegram.monthly_peaks] == [2780, 3576, 2811]
-    assert telegram.monthly_peaks[0].peak_at == datetime(
-        2026, 7, 19, 14, 15, tzinfo=UTC
-    )
+    assert telegram.monthly_peaks[0].peak_at == datetime(2026, 7, 19, 14, 15, tzinfo=UTC)
     gas = telegram.channel_of("gas")
-    assert gas is not None and gas.device_type == GAS and gas.kind == "gas"
+    assert gas is not None
+    assert gas.device_type == GAS
+    assert gas.kind == "gas"
     assert (gas.reading, gas.unit, gas.valve_state) == (440.448, "m3", 1)
     assert gas.equipment_id == "GAS0000000"
     water = telegram.channel_of("water")
-    assert water is not None and water.device_type == WATER
+    assert water is not None
+    assert water.device_type == WATER
     assert (water.reading, water.unit, water.channel) == (33.692, "m3", 2)
     assert water.reading_at == datetime(2026, 10, 23, 19, 15, 30, tzinfo=UTC)
     assert telegram.channel_of("heat") is None
@@ -245,7 +246,8 @@ def test_telegram_tolerates_unusual_content() -> None:
         "/X\r\n\r\n0-0:1.0.0(991399250000S)\r\n1-0:1.4.0(abc)\r\n0-3:24.1.0(zz)\r\n0-3:96.1.1(zz)\r\n!0000\r\n"
     )
     assert not minimal.crc_valid
-    assert minimal.timestamp is None and minimal.avg_demand is None
+    assert minimal.timestamp is None
+    assert minimal.avg_demand is None
     channel = minimal.channels[3]
     assert (channel.device_type, channel.reading, channel.kind) == (
         None,
@@ -257,7 +259,7 @@ def test_telegram_tolerates_unusual_content() -> None:
 
 
 async def test_telegram_over_http(
-    device: TestServer,
+    device: FakeDevice,
     session: aiohttp.ClientSession,
     routes: dict[str, tuple[int, str]],
 ) -> None:
@@ -267,17 +269,15 @@ async def test_telegram_over_http(
     assert (await client.async_get_telegram()).crc_valid
 
 
-async def test_unsupported_endpoint(
-    device: TestServer, session: aiohttp.ClientSession
-) -> None:
+async def test_unsupported_endpoint(device: FakeDevice, session: aiohttp.ClientSession) -> None:
     from mygrid_voltbridge import VoltBridgeUnsupportedError
 
     with pytest.raises(VoltBridgeUnsupportedError):
         await make_client(device, session).async_get_telegram()
 
 
-async def test_client_owns_session_when_none_given(device: TestServer) -> None:
-    async with VoltBridgeClient("127.0.0.1", port=device.port) as client:
+async def test_client_owns_session_when_none_given(device: FakeDevice) -> None:
+    async with VoltBridgeClient("127.0.0.1", port=port_of(device)) as client:
         assert (await client.async_get_power()).net_power == 261
         assert client._session is not None
     assert client._session is None
@@ -285,7 +285,7 @@ async def test_client_owns_session_when_none_given(device: TestServer) -> None:
 
 
 async def test_reads_retry_with_backoff_but_writes_do_not(
-    device: TestServer, session: aiohttp.ClientSession, monkeypatch: pytest.MonkeyPatch
+    device: FakeDevice, session: aiohttp.ClientSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     sleeps: list[float] = []
 
@@ -296,16 +296,18 @@ async def test_reads_retry_with_backoff_but_writes_do_not(
     calls = 0
     real = session.request
 
-    def flaky(*args: object, **kwargs: object):  # type: ignore[no-untyped-def]
+    def flaky(method: str, url: str, **kwargs: Any) -> object:
         nonlocal calls
         calls += 1
         if calls < 3:
-            raise aiohttp.ClientConnectionError("boom")
-        return real(*args, **kwargs)  # type: ignore[arg-type]
+            msg = "boom"
+            raise aiohttp.ClientConnectionError(msg)
+        return real(method, url, **kwargs)
 
     monkeypatch.setattr(session, "request", flaky)
     assert (await make_client(device, session).async_get_power()).net_power == 261
-    assert calls == 3 and sleeps == [0.25, 0.5]
+    assert calls == 3
+    assert sleeps == [0.25, 0.5]
 
     calls = 0
     sleeps.clear()
@@ -317,3 +319,48 @@ async def test_reads_retry_with_backoff_but_writes_do_not(
     with pytest.raises(VoltBridgeConnectionError):
         await make_client(device, session).async_reboot()
     assert sleeps == []
+
+
+async def test_server_errors_are_retried_then_reported_as_unreachable(
+    device: FakeDevice,
+    session: aiohttp.ClientSession,
+    routes: dict[str, tuple[int, str]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sleeps: list[float] = []
+
+    async def fake_sleep(delay: float) -> None:
+        sleeps.append(delay)
+
+    monkeypatch.setattr("mygrid_voltbridge.client.asyncio.sleep", fake_sleep)
+    routes["/api/power"] = (503, "busy")
+    with pytest.raises(VoltBridgeConnectionError, match="HTTP 503"):
+        await make_client(device, session, retries=2).async_get_power()
+    assert sleeps == [0.25, 0.5]
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [{"retries": -1}, {"timeout": 0}, {"timeout": -1}, {"min_request_interval": -0.1}],
+)
+def test_constructor_validates_arguments(kwargs: dict[str, Any]) -> None:
+    with pytest.raises(ValueError, match="must be"):
+        VoltBridgeClient("127.0.0.1", **kwargs)
+
+
+async def test_requests_are_serialised_and_spaced(
+    device: FakeDevice, session: aiohttp.ClientSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sleeps: list[float] = []
+    real_sleep = asyncio.sleep
+
+    async def record(delay: float) -> None:
+        sleeps.append(delay)
+        await real_sleep(0)
+
+    monkeypatch.setattr("mygrid_voltbridge.client.asyncio.sleep", record)
+    client = VoltBridgeClient("127.0.0.1", session, port=port_of(device), min_request_interval=5)
+    results = await asyncio.gather(*(client.async_get_power() for _ in range(3)))
+    assert len(results) == 3
+    assert len(sleeps) == 2
+    assert all(0 < s <= 5 for s in sleeps)

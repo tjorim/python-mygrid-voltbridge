@@ -1,19 +1,14 @@
 import asyncio
-import socket
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
+import socket
 
 import pytest
 
 from mygrid_voltbridge import VoltBridgeResponseError
 from mygrid_voltbridge.models import PhaseData
-from mygrid_voltbridge.udp import (
-    BroadcastStream,
-    P1Broadcast,
-    _crc16_arc,
-    async_listen,
-    parse_datagram,
-)
+from mygrid_voltbridge.udp import BroadcastStream, P1Broadcast, _crc16_arc, async_listen, parse_datagram
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -23,11 +18,7 @@ def load(name: str) -> bytes:
 
 
 def rebuild(payload: bytes, *, stream: int = 0) -> bytes:
-    header = (
-        b"P1\x01"
-        + bytes([stream, 0, len(payload)])
-        + _crc16_arc(payload).to_bytes(2, "big")
-    )
+    header = b"P1\x01" + bytes([stream, 0, len(payload)]) + _crc16_arc(payload).to_bytes(2, "big")
     return header + payload
 
 
@@ -74,7 +65,7 @@ def test_aggregated_stream() -> None:
         lambda b: b[:20] + bytes([b[20] ^ 0xFF]) + b[21:],
     ],
 )
-def test_rejects_corrupt_datagrams(mutate) -> None:  # type: ignore[no-untyped-def]
+def test_rejects_corrupt_datagrams(mutate: Callable[[bytes], bytes]) -> None:
     with pytest.raises(VoltBridgeResponseError):
         parse_datagram(mutate(load("p1")))
 
@@ -108,9 +99,7 @@ def test_rejects_non_numeric_scalars() -> None:
 
 async def test_listener_delivers_and_filters() -> None:
     received: list[P1Broadcast] = []
-    transport = await async_listen(
-        received.append, host="127.0.0.1", port=0, bind="127.0.0.1"
-    )
+    transport = await async_listen(received.append, host="127.0.0.1", port=0, bind="127.0.0.1")
     port = transport.get_extra_info("sockname")[1]
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sender:
@@ -127,9 +116,7 @@ async def test_listener_delivers_and_filters() -> None:
 
 async def test_listener_ignores_other_hosts() -> None:
     received: list[P1Broadcast] = []
-    transport = await async_listen(
-        received.append, host="10.9.9.9", port=0, bind="127.0.0.1"
-    )
+    transport = await async_listen(received.append, host="10.9.9.9", port=0, bind="127.0.0.1")
     port = transport.get_extra_info("sockname")[1]
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sender:
@@ -140,21 +127,19 @@ async def test_listener_ignores_other_hosts() -> None:
         transport.close()
 
 
-async def test_cli_watch(
-    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
-) -> None:
+async def test_cli_watch(capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch) -> None:
     import json
 
     from mygrid_voltbridge import cli
 
     real_listen = cli.async_listen
 
-    async def listen(callback, *, host, port):  # type: ignore[no-untyped-def]
+    async def listen(
+        callback: Callable[[P1Broadcast], None], *, host: str | None, port: int
+    ) -> asyncio.DatagramTransport:
         transport = await real_listen(callback, host=host, port=0, bind="127.0.0.1")
         sender = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        sender.sendto(
-            load("p1"), ("127.0.0.1", transport.get_extra_info("sockname")[1])
-        )
+        sender.sendto(load("p1"), ("127.0.0.1", transport.get_extra_info("sockname")[1]))
         sender.close()
         return transport
 

@@ -7,7 +7,7 @@ integer W and Wh so values compare and sum exactly.
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any
+from typing import Any, cast
 
 from .exceptions import VoltBridgeNoDataError, VoltBridgeResponseError
 
@@ -17,7 +17,8 @@ def _number(payload: Mapping[str, Any], key: str) -> float | None:
     if value is None:
         return None
     if isinstance(value, bool) or not isinstance(value, int | float):
-        raise VoltBridgeResponseError(f"{key} is not a number: {value!r}")
+        msg = f"{key} is not a number: {value!r}"
+        raise VoltBridgeResponseError(msg)
     return float(value)
 
 
@@ -29,10 +30,12 @@ def _milli(payload: Mapping[str, Any], key: str) -> int | None:
 
 def _require_data(payload: object) -> Mapping[str, Any]:
     if not isinstance(payload, dict):
-        raise VoltBridgeResponseError("response is not a JSON object")
+        msg = "response is not a JSON object"
+        raise VoltBridgeResponseError(msg)
     if not payload.get("hasData"):
-        raise VoltBridgeNoDataError("no P1 telegram received yet")
-    return payload
+        msg = "no P1 telegram received yet"
+        raise VoltBridgeNoDataError(msg)
+    return cast("Mapping[str, Any]", payload)
 
 
 @dataclass(frozen=True)
@@ -46,12 +49,14 @@ class PowerReading:
 
     @classmethod
     def from_payload(cls, payload: object) -> "PowerReading":
+        """Build from a ``/api/power`` payload."""
         data = _require_data(payload)
         net = _milli(data, "netPowerW")
         imported = _milli(data, "importPowerW")
         exported = _milli(data, "exportPowerW")
         if net is None or imported is None or exported is None:
-            raise VoltBridgeResponseError("power response is missing fields")
+            msg = "power response is missing fields"
+            raise VoltBridgeResponseError(msg)
         tariff = _number(data, "tariff")
         return cls(
             net_power=net,
@@ -95,6 +100,7 @@ class P1Data:
 
     @classmethod
     def from_payload(cls, payload: object) -> "P1Data":
+        """Build from a ``/api/p1data`` payload."""
         data = _require_data(payload)
         tariff = _number(data, "tariff")
         return cls(
@@ -130,7 +136,8 @@ def _timestamp(payload: Mapping[str, Any], key: str) -> datetime | None:
     try:
         return datetime.fromisoformat(str(value))
     except ValueError as err:
-        raise VoltBridgeResponseError(f"{key} is not a timestamp: {value!r}") from err
+        msg = f"{key} is not a timestamp: {value!r}"
+        raise VoltBridgeResponseError(msg) from err
 
 
 def _phases(payload: Mapping[str, Any]) -> dict[int, PhaseData]:

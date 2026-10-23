@@ -6,9 +6,9 @@ Resolving the service is left to the caller (for example Home Assistant's
 zeroconf integration), so this module needs no extra dependency.
 """
 
-import re
 from collections.abc import Mapping
 from dataclasses import dataclass
+import re
 
 from .exceptions import VoltBridgeResponseError
 
@@ -32,17 +32,17 @@ class VoltBridgeInfo:
         return ":".join(self.device_id[i : i + 2] for i in range(0, 12, 2)).lower()
 
     @classmethod
-    def from_properties(
-        cls, properties: Mapping[str | bytes, str | bytes | None]
-    ) -> "VoltBridgeInfo":
+    def from_properties(cls, properties: Mapping[str | bytes, str | bytes | None]) -> "VoltBridgeInfo":
         """Build from mDNS TXT properties; raises if this is not a VoltBridge."""
         text = {_str(key): _str(value) for key, value in properties.items()}
         device_id = text.get("device_id") or ""
         model = text.get("model")
         if text.get("manufacturer") != "MyGrid" or not _DEVICE_ID.fullmatch(device_id):
-            raise VoltBridgeResponseError("not a MyGrid device advertisement")
+            msg = "not a MyGrid device advertisement"
+            raise VoltBridgeResponseError(msg)
         if model is None or "voltbridge" not in model.lower():
-            raise VoltBridgeResponseError(f"not a VoltBridge: {model!r}")
+            msg = f"not a VoltBridge: {model!r}"
+            raise VoltBridgeResponseError(msg)
         return cls(
             device_id=device_id.upper(),
             model=model,

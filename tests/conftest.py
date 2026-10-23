@@ -2,9 +2,10 @@ from collections.abc import AsyncIterator
 from pathlib import Path
 
 import aiohttp
-import pytest
 from aiohttp import web
-from aiohttp.test_utils import TestServer
+import pytest
+
+from tests.fake_device import FakeDevice
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -19,7 +20,7 @@ def routes() -> dict[str, tuple[int, str]]:
 
 
 @pytest.fixture
-async def device(routes: dict[str, tuple[int, str]]) -> AsyncIterator[TestServer]:
+async def device(routes: dict[str, tuple[int, str]]) -> AsyncIterator[FakeDevice]:
     rebooted: list[str] = []
 
     async def handler(request: web.Request) -> web.Response:
@@ -31,9 +32,9 @@ async def device(routes: dict[str, tuple[int, str]]) -> AsyncIterator[TestServer
 
     app = web.Application()
     app.router.add_route("*", "/{tail:.*}", handler)
-    server = TestServer(app)
+    server = FakeDevice(app)
     await server.start_server()
-    server.rebooted = rebooted  # type: ignore[attr-defined]
+    server.rebooted = rebooted
     yield server
     await server.close()
 

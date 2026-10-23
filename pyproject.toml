@@ -28,8 +28,8 @@ dependencies = ["aiohttp>=3.10,<4"]
 mygrid-voltbridge = "mygrid_voltbridge.cli:main"
 
 [project.urls]
-Source = "https://github.com/tjorim/mygrid-voltbridge"
-Issues = "https://github.com/tjorim/mygrid-voltbridge/issues"
+Source = "https://github.com/tjorim/python-mygrid-voltbridge"
+Issues = "https://github.com/tjorim/python-mygrid-voltbridge/issues"
 
 [dependency-groups]
 dev = [

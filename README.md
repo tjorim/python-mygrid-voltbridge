@@ -1,0 +1,47 @@
+# mygrid-voltbridge
+
+A small typed async Python client for the local HTTP API of the **MyGrid VoltBridge** P1 meter adapter. Requires Python **3.12+** and `aiohttp`. Version 0.1.0 has not been published to PyPI.
+
+The API is not documented by the manufacturer. It was reverse-engineered from the device's own status page and verified against one device (firmware `voltbridge` build 15.6); see [docs/api.md](docs/api.md). It may change between firmware versions.
+
+## Query a meter
+
+The helper is read-only:
+
+```sh
+uv sync
+uv run mygrid-voltbridge 192.168.0.45
+uv run mygrid-voltbridge 192.168.0.45 --power
+```
+
+## Library
+
+```python
+import asyncio
+
+import aiohttp
+
+from mygrid_voltbridge import VoltBridgeClient
+
+
+async def main() -> None:
+    async with aiohttp.ClientSession() as session:
+        client = VoltBridgeClient("192.168.0.45", session)
+        power = await client.async_get_power()  # W, positive = import
+        print(power.net_power, power.tariff)
+        data = await client.async_get_p1_data()  # full snapshot
+        print(data.energy_import_t1, data.phases[1].voltage)
+
+
+asyncio.run(main())
+```
+
+| API | Contract |
+| --- | --- |
+| `async_get_power()` | `PowerReading` from `/api/power`; cheap, suitable for ~1 s polling |
+| `async_get_p1_data()` | `P1Data` from `/api/p1data`; poll every few seconds at most |
+| `async_reboot()` | `POST /reboot`; never retried |
+
+Power is in **W**, energy in **Wh**, voltage in **V**, current in **A**; the device reports kW/kWh and the library converts. Fields the meter does not report are `None`. Errors derive from `VoltBridgeError`: `VoltBridgeConnectionError`, `VoltBridgeResponseError` and `VoltBridgeNoDataError` (no P1 telegram received yet).
+
+The caller owns the `aiohttp` session. There is no authentication or TLS on the device; keep it on the trusted LAN. Per-phase fields other than L1 are parsed by naming pattern and unverified.

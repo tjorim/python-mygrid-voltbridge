@@ -1,0 +1,24 @@
+name: Validate library
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: ['3.12', '3.13', '3.14']
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884
+        with:
+          enable-cache: true
+          python-version: ${{ matrix.python }}
+      - run: uv sync --frozen --python '${{ matrix.python }}'
+      - run: uv run --python '${{ matrix.python }}' ruff check .
+      - run: uv run --python '${{ matrix.python }}' ruff format --check .
+      - run: uv run --python '${{ matrix.python }}' mypy
+      - run: uv run --python '${{ matrix.python }}' pytest
+      - run: uv build --python '${{ matrix.python }}'

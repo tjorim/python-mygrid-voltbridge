@@ -1,0 +1,67 @@
+[build-system]
+requires = ["hatchling==1.32.4"]
+build-backend = "hatchling.build"
+
+[project]
+name = "mygrid-voltbridge"
+version = "0.1.0"
+description = "Typed async HTTP client for the MyGrid VoltBridge P1 meter"
+readme = "README.md"
+requires-python = ">=3.12"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{name = "mygrid-voltbridge contributors"}]
+keywords = ["mygrid", "voltbridge", "p1", "dsmr", "asyncio"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Framework :: AsyncIO",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Typing :: Typed",
+]
+dependencies = ["aiohttp>=3.10,<4"]
+
+[project.scripts]
+mygrid-voltbridge = "mygrid_voltbridge.cli:main"
+
+[project.urls]
+Source = "https://github.com/tjorim/mygrid-voltbridge"
+Issues = "https://github.com/tjorim/mygrid-voltbridge/issues"
+
+[dependency-groups]
+dev = [
+    "pytest>=9,<10",
+    "pytest-asyncio>=1.4,<2",
+    "pytest-cov>=7,<8",
+    "ruff>=0.17,<0.18",
+    "mypy>=2.4,<3",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/mygrid_voltbridge"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]
+addopts = "--strict-markers --cov=mygrid_voltbridge --cov-report=term-missing --cov-fail-under=95"
+filterwarnings = ["error"]
+
+[tool.coverage.run]
+branch = true
+source = ["mygrid_voltbridge"]
+
+[tool.ruff]
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "ASYNC"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+files = ["src/mygrid_voltbridge"]

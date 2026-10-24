@@ -364,3 +364,36 @@ async def test_requests_are_serialised_and_spaced(
     assert len(results) == 3
     assert len(sleeps) == 2
     assert all(0 < s <= 5 for s in sleeps)
+
+
+async def test_status_real_capture(device: FakeDevice, session: aiohttp.ClientSession) -> None:
+    from mygrid_voltbridge import P1Status
+
+    status = await make_client(device, session).async_get_status()
+    assert status == P1Status(
+        rssi=-76,
+        p1_fresh=True,
+        packets_total=47957,
+        packets_valid=47957,
+        packets_error=0,
+        error_percent=0.0,
+    )
+
+
+async def test_status_without_statistics(
+    device: FakeDevice, session: aiohttp.ClientSession, routes: dict[str, tuple[int, str]]
+) -> None:
+    routes["/api/p1data?d=1"] = (200, json.dumps({"hasData": True, "hasStats": False, "rssi": -60}))
+    status = await make_client(device, session).async_get_status()
+    assert status.rssi == -60
+    assert status.packets_total is None
+    assert status.error_percent is None
+    assert status.p1_fresh is None
+
+
+async def test_status_needs_data(
+    device: FakeDevice, session: aiohttp.ClientSession, routes: dict[str, tuple[int, str]]
+) -> None:
+    routes["/api/p1data?d=1"] = (200, json.dumps({"hasData": False}))
+    with pytest.raises(VoltBridgeNoDataError):
+        await make_client(device, session).async_get_status()

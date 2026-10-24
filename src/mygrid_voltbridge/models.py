@@ -67,6 +67,42 @@ class PowerReading:
 
 
 @dataclass(frozen=True)
+class P1Status:
+    """Health of the device and of its P1 link, from ``/api/p1data?d=1``.
+
+    ``error_percent`` is the share of P1 telegrams that failed their checksum.
+    """
+
+    rssi: int | None
+    p1_fresh: bool | None
+    packets_total: int | None
+    packets_valid: int | None
+    packets_error: int | None
+    error_percent: float | None
+
+    @classmethod
+    def from_payload(cls, payload: object) -> "P1Status":
+        """Build from a ``/api/p1data?d=1`` payload."""
+        data = _require_data(payload)
+        has_stats = data.get("hasStats") is not False
+        rssi = _number(data, "rssi")
+        fresh = data.get("p1Fresh")
+
+        def count(key: str) -> int | None:
+            value = _number(data, key) if has_stats else None
+            return None if value is None else int(value)
+
+        return cls(
+            rssi=None if rssi is None else int(rssi),
+            p1_fresh=fresh if isinstance(fresh, bool) else None,
+            packets_total=count("packetsTotal"),
+            packets_valid=count("packetsValid"),
+            packets_error=count("packetsError"),
+            error_percent=_number(data, "packetsErrPerc") if has_stats else None,
+        )
+
+
+@dataclass(frozen=True)
 class PhaseData:
     """Per-phase values; any field the meter does not report is ``None``."""
 

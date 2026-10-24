@@ -11,7 +11,7 @@ from typing import Any, Self
 import aiohttp
 
 from .exceptions import VoltBridgeConnectionError, VoltBridgeResponseError, VoltBridgeUnsupportedError
-from .models import P1Data, PowerReading
+from .models import P1Data, P1Status, PowerReading
 from .telegram import Telegram, parse_telegram
 
 _LOGGER = logging.getLogger(__name__)
@@ -78,6 +78,10 @@ class VoltBridgeClient:
     async def async_get_p1_data(self) -> P1Data:
         """Read the full P1 snapshot (``/api/p1data``)."""
         return P1Data.from_payload(await self._json("/api/p1data"))
+
+    async def async_get_status(self) -> P1Status:
+        """Read the Wi-Fi signal and P1 packet statistics (``/api/p1data?d=1``)."""
+        return P1Status.from_payload(await self._json("/api/p1data?d=1"))
 
     async def async_get_telegram_text(self) -> str:
         """Read the raw DSMR telegram (``/api/telegram``), unmodified."""

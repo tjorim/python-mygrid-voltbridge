@@ -70,3 +70,7 @@ The device advertises `<hostname>.local` (`voltbridge-` + the last three MAC byt
 The test installation has a gas meter on channel 1 and a **water meter on channel 2**, which only the telegram reveals. Gas appears in both the JSON API and the telegram.
 
 The undecoded UDP field `10.12` is `{1, 999.9, 999.0}` in every capture, which matches breaker state `1`, limiter `999.9 kW` and fuse `999 A` from this telegram (inferred from the values only).
+
+## Status
+
+`GET /api/p1data?d=1` returns a lighter document: one-minute averages, energy totals, the Wi-Fi signal (`rssi`, dBm), whether the last telegram is fresh (`p1Fresh`) and packet statistics (`packetsTotal`, `packetsValid`, `packetsError`, `packetsErrPerc`, present when `hasStats` is true). The library exposes the last three groups as `P1Status` (`async_get_status()`). The UDP live stream carries the same signal strength (field `5.1`).

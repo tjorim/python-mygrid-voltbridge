@@ -16,6 +16,7 @@ def routes() -> dict[str, tuple[int, str]]:
     return {
         "/api/power": (200, (FIXTURES / "power.json").read_text()),
         "/api/p1data": (200, (FIXTURES / "p1data.json").read_text()),
+        "/api/p1data?d=1": (200, (FIXTURES / "status.json").read_text()),
     }
 
 
@@ -27,7 +28,7 @@ async def device(routes: dict[str, tuple[int, str]]) -> AsyncIterator[FakeDevice
         if request.path == "/reboot" and request.method == "POST":
             rebooted.append("x")
             return web.Response(text="ok")
-        status, body = routes.get(request.path, (404, "Nothing matches the given URI"))
+        status, body = routes.get(request.path_qs, routes.get(request.path, (404, "Nothing matches the given URI")))
         return web.Response(status=status, text=body, content_type="application/json")
 
     app = web.Application()

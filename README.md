@@ -43,6 +43,7 @@ asyncio.run(main())
 | `async_listen(callback, host=...)` | Push updates: UDP broadcasts on 49491, about once a second; see below |
 | `parse_datagram(bytes)` | Decode one UDP datagram into a `P1Broadcast` |
 | `VoltBridgeInfo.from_properties(txt)` | Identify a device from its `_mygrid._tcp` mDNS TXT record (`device_id` is the MAC) |
+| `async_get_status()` | `P1Status` from `/api/p1data?d=1`: Wi-Fi signal and P1 packet error statistics |
 | `async_get_telegram()` | `Telegram` from `/api/telegram`: M-Bus devices (gas, **water**), breaker, limiter, monthly peak history, CRC check |
 | `async_get_telegram_text()` | The raw telegram string |
 | `async_reboot()` | `POST /reboot`; never retried |

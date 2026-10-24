@@ -54,3 +54,13 @@ async def test_udp_broadcast_matches_http(live: LiveDevice, host: str) -> None:
     assert abs(broadcast.data.net_power - data.net_power) < TOLERANCE_W
     assert broadcast.data.energy_import_t1 is not None
     assert abs(broadcast.data.energy_import_t1 - (data.energy_import_t1 or 0)) < 1000  # Wh
+
+
+async def test_status_reports_signal_and_packet_health(live: LiveDevice) -> None:
+    status = await live.fetch("/api/p1data?d=1", lambda c: c.async_get_status())
+    assert status.rssi is not None
+    assert -100 <= status.rssi < 0
+    assert status.packets_total is not None
+    assert status.packets_total >= (status.packets_valid or 0) + (status.packets_error or 0) - 1
+    assert status.error_percent is not None
+    assert 0 <= status.error_percent <= 100

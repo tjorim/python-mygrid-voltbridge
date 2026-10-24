@@ -4,6 +4,10 @@ A small typed async Python client for the local HTTP API of the [**MyGrid VoltBr
 
 The API is not documented by the manufacturer. It was reverse-engineered from the device's own status page and verified against one device (firmware `voltbridge` build 15.6); see [docs/api.md](docs/api.md). It may change between firmware versions.
 
+## Documentation
+
+See the [MyGrid documentation hub](https://tjorim.github.io/custom-mygrid/) for the integration guides and related projects. The [hub README](https://github.com/tjorim/custom-mygrid#readme) is also available as a fallback.
+
 ## Query a meter
 
 The helper is read-only:

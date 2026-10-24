@@ -28,6 +28,7 @@ dependencies = ["aiohttp>=3.10,<4"]
 mygrid-voltbridge = "mygrid_voltbridge.cli:main"
 
 [project.urls]
+Documentation = "https://tjorim.github.io/custom-mygrid/"
 Source = "https://github.com/tjorim/python-mygrid-voltbridge"
 Issues = "https://github.com/tjorim/python-mygrid-voltbridge/issues"
 

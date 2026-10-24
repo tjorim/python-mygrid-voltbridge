@@ -8,7 +8,7 @@ dynamic = ["version"]
 description = "Typed async HTTP client for the MyGrid VoltBridge P1 meter"
 readme = "README.md"
 requires-python = ">=3.12"
-license = "MIT"
+license = "Apache-2.0"
 license-files = ["LICENSE"]
 authors = [{name = "mygrid-voltbridge contributors"}]
 keywords = ["mygrid", "voltbridge", "p1", "dsmr", "asyncio"]

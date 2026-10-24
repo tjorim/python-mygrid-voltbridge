@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "mygrid-voltbridge"
 dynamic = ["version"]
-description = "Typed async HTTP client for the MyGrid VoltBridge P1 meter"
+description = "Typed async client for the MyGrid VoltBridge P1 meter (local HTTP API, DSMR telegram, UDP push)"
 readme = "README.md"
 requires-python = ">=3.12"
 license = "Apache-2.0"

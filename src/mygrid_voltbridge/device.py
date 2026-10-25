@@ -13,7 +13,7 @@ import re
 
 from .exceptions import VoltBridgeResponseError
 
-_ROW = re.compile(r"<tr>\s*<td[^>]*>(.*?)</td>\s*<td[^>]*>(.*?)</td>\s*</tr>", re.DOTALL)
+_ROW = re.compile(r"<tr\b[^>]*>\s*<td[^>]*>(.*?)</td>\s*<td[^>]*>(.*?)</td>\s*</tr>", re.DOTALL)
 _TAG = re.compile(r"<[^>]+>")
 _MAC = re.compile(r"^[0-9A-Fa-f]{2}(?::[0-9A-Fa-f]{2}){5}$")
 _HOSTNAME = re.compile(r"\(([^)\s]+)\)")
@@ -50,12 +50,13 @@ class DeviceInfo:
         rows = {_clean(label): _clean(value) for label, value in _ROW.findall(page)}
         mac = rows.get("MAC address")
         firmware = _FIRMWARE.match(rows.get("Firmware type, version, variant", ""))
-        if mac is None and firmware is None:
+        has_mac = mac is not None and _MAC.match(mac) is not None
+        if not has_mac and firmware is None:
             msg = "not a VoltBridge status page"
             raise VoltBridgeResponseError(msg)
         hostname = _HOSTNAME.search(rows.get("IP address", ""))
         return cls(
-            mac_address=mac.lower() if mac is not None and _MAC.match(mac) else None,
+            mac_address=mac.lower() if mac is not None and has_mac else None,
             hostname=hostname.group(1) if hostname else None,
             firmware_type=firmware.group(1) if firmware else None,
             firmware_version=int(firmware.group(2)) if firmware else None,

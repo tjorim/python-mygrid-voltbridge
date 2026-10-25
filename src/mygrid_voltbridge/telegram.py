@@ -19,7 +19,7 @@ _TIMESTAMP = re.compile(r"^(\d{12})([SW])$")
 _VALUE = re.compile(r"^(-?\d+(?:\.\d+)?)\*(\S+)$")
 _MBUS = re.compile(r"^0-(\d+):24\.(\d+)\.\d+$")
 
-_HEADER = re.compile(r"^/(?P<manufacturer>[A-Za-z]{3})\w\\(?P<model>.+)$")
+_HEADER = re.compile(r"^/(?P<manufacturer>[A-Za-z]{3})\w\\?(?P<model>.+)$")
 
 # DSMR OBIS codes per phase: import power, export power, voltage, current.
 _PHASE_CODES = {

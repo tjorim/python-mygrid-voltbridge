@@ -459,7 +459,13 @@ def test_device_info_tolerates_missing_and_odd_rows() -> None:
 
 
 @pytest.mark.parametrize(
-    "page", ["", "<html>Not Found</html>", "<table><tr><td>Uptime</td><td>1:00:00</td></tr></table>"]
+    "page",
+    [
+        "",
+        "<html>Not Found</html>",
+        "<table><tr><td>Uptime</td><td>1:00:00</td></tr></table>",
+        "<table><tr><td>MAC address</td><td>not a mac</td></tr></table>",
+    ],
 )
 def test_device_info_rejects_other_pages(page: str) -> None:
     with pytest.raises(VoltBridgeResponseError):
@@ -506,3 +512,15 @@ def test_tariff_names_and_power_overlay() -> None:
     assert reading.tariff_name == "night"
     kept = dataclasses.replace(reading, tariff=None).apply_to(snapshot)
     assert kept.tariff == 1
+
+
+def test_device_info_accepts_rows_with_attributes() -> None:
+    page = '<table><tr class="system"><td>MAC address</td><td>AA:BB:CC:DD:EE:FF</td></tr></table>'
+    assert DeviceInfo.from_html(page).mac_address == "aa:bb:cc:dd:ee:ff"
+
+
+def test_telegram_header_without_backslash() -> None:
+    from mygrid_voltbridge import parse_telegram
+
+    telegram = dataclasses.replace(parse_telegram(TELEGRAM), header="/LGF5E360")
+    assert (telegram.meter_manufacturer, telegram.meter_model) == ("LGF", "E360")

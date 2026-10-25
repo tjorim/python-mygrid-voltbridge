@@ -84,11 +84,12 @@ async def test_silent_udp_falls_back_to_the_power_endpoint(device: FakeDevice, s
     assert update.data.gas == first.data.gas
 
 
+@pytest.mark.parametrize("error", [OSError, ValueError])  # ValueError: no SO_REUSEPORT on the platform
 async def test_udp_that_cannot_start_means_polling_only(
-    device: FakeDevice, session: aiohttp.ClientSession, monkeypatch: pytest.MonkeyPatch
+    device: FakeDevice, session: aiohttp.ClientSession, monkeypatch: pytest.MonkeyPatch, error: type[Exception]
 ) -> None:
     async def refuse(*args: object, **kwargs: object) -> None:
-        raise OSError
+        raise error
 
     monkeypatch.setattr("mygrid_voltbridge.stream.async_listen", refuse)
     async with aclosing(open_stream(client_for(device, session), free_udp_port())) as stream:

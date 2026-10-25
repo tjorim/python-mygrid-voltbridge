@@ -153,12 +153,12 @@ class _Feed:
         try:
             await self._listen(settings.udp_port)
             self._udp_active = True
-        except OSError as err:
+        except (OSError, ValueError) as err:  # ValueError: no SO_REUSEPORT on this platform
             _LOGGER.warning("UDP push unavailable, falling back to polling: %s", err)
         if self._udp_active and settings.aggregated_port is not None:
             try:
                 await self._listen(settings.aggregated_port)
-            except OSError as err:
+            except (OSError, ValueError) as err:
                 _LOGGER.debug("Aggregated stream unavailable: %s", err)
         self._tasks = [asyncio.create_task(self._guarded(work)) for work in (self._poll, self._fallback)]
 

@@ -63,6 +63,7 @@ class VoltBridgeClient:
         if min_request_interval < 0:
             msg = "min_request_interval must be 0 or greater"
             raise ValueError(msg)
+        self._host = host
         self._base = f"http://{host}:{port}"
         self._session = session
         self._owns_session = session is None
@@ -71,6 +72,11 @@ class VoltBridgeClient:
         self._min_interval = min_request_interval
         self._lock = asyncio.Lock()
         self._last_request = 0.0
+
+    @property
+    def host(self) -> str:
+        """The device's host, as given."""
+        return self._host
 
     async def async_get_power(self) -> PowerReading:
         """Read instantaneous power (``/api/power``)."""

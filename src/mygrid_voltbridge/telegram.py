@@ -11,6 +11,7 @@ from datetime import UTC, datetime, timedelta, timezone
 import re
 
 from .exceptions import VoltBridgeResponseError
+from .models import PhaseData
 
 _OBIS = re.compile(r"^(\d+-\d+:\d+\.\d+\.\d+)((?:\([^)]*\))*)$")
 _GROUP = re.compile(r"\(([^)]*)\)")
@@ -19,6 +20,13 @@ _VALUE = re.compile(r"^(-?\d+(?:\.\d+)?)\*(\S+)$")
 _MBUS = re.compile(r"^0-(\d+):24\.(\d+)\.\d+$")
 
 _HEADER = re.compile(r"^/(?P<manufacturer>[A-Za-z]{3})\w\\(?P<model>.+)$")
+
+# DSMR OBIS codes per phase: import power, export power, voltage, current.
+_PHASE_CODES = {
+    1: ("1-0:21.7.0", "1-0:22.7.0", "1-0:32.7.0", "1-0:31.7.0"),
+    2: ("1-0:41.7.0", "1-0:42.7.0", "1-0:52.7.0", "1-0:51.7.0"),
+    3: ("1-0:61.7.0", "1-0:62.7.0", "1-0:72.7.0", "1-0:71.7.0"),
+}
 
 # The meter reports these when no limiter or fuse threshold is configured.
 _NO_LIMITER_KW = 999.9
@@ -73,6 +81,17 @@ class Telegram:
     monthly_peaks: tuple[MonthlyPeak, ...]
     channels: Mapping[int, MBusChannel]
     objects: Mapping[str, tuple[tuple[str, ...], ...]] = field(default_factory=dict)
+    phases: Mapping[int, PhaseData] = field(default_factory=dict)
+
+    @property
+    def gas(self) -> MBusChannel | None:
+        """Return the first gas meter on the M-Bus, if any."""
+        return self.channel_of("gas")
+
+    @property
+    def water(self) -> MBusChannel | None:
+        """Return the first water meter on the M-Bus, if any."""
+        return self.channel_of("water")
 
     @property
     def meter_manufacturer(self) -> str | None:
@@ -150,6 +169,26 @@ def _threshold(group: tuple[str, ...], unit: str, none_value: float, factor: int
     """Return a threshold scaled to W or A, or ``None`` if unset (the meter's "no limit" value)."""
     value = _quantity(group[0], unit) if group else None
     return None if value is None or value == none_value else round(value * factor)
+
+
+def _phases(objects: Mapping[str, tuple[tuple[str, ...], ...]]) -> dict[int, PhaseData]:
+    """Decode the per-phase values using the standard DSMR codes.
+
+    Only L1 is checked against a real meter; L2 and L3 follow the standard's
+    code scheme (41/42/52/51 and 61/62/72/71) and are unverified on hardware.
+    """
+    phases = {}
+    for number, codes in _PHASE_CODES.items():
+        if not any(code in objects for code in codes):
+            continue
+        imported, exported, voltage, current = (_first(objects, code) for code in codes)
+        phases[number] = PhaseData(
+            import_power=_kilo(imported[0], "kW") if imported else None,
+            export_power=_kilo(exported[0], "kW") if exported else None,
+            voltage=_quantity(voltage[0], "V") if voltage else None,
+            current=_quantity(current[0], "A") if current else None,
+        )
+    return phases
 
 
 def _first(objects: Mapping[str, tuple[tuple[str, ...], ...]], code: str) -> tuple[str, ...]:
@@ -249,4 +288,5 @@ def parse_telegram(text: str) -> Telegram:
         monthly_peaks=_peaks(history),
         channels=_channels(objects),
         objects=objects,
+        phases=_phases(objects),
     )

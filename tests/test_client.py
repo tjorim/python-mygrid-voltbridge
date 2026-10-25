@@ -464,3 +464,45 @@ def test_device_info_tolerates_missing_and_odd_rows() -> None:
 def test_device_info_rejects_other_pages(page: str) -> None:
     with pytest.raises(VoltBridgeResponseError):
         DeviceInfo.from_html(page)
+
+
+def test_telegram_decodes_phases_with_the_standard_codes() -> None:
+    from mygrid_voltbridge import parse_telegram
+
+    assert parse_telegram(TELEGRAM).phases == {1: PhaseData(250, 0, 237.7, 1.83)}
+    three_phase = TELEGRAM.replace(
+        "1-0:31.4.0(999*A)\r\n",
+        "1-0:31.4.0(999*A)\r\n"
+        "1-0:41.7.0(00.100*kW)\r\n1-0:42.7.0(00.020*kW)\r\n1-0:52.7.0(231.5*V)\r\n1-0:51.7.0(000.43*A)\r\n"
+        "1-0:61.7.0(00.300*kW)\r\n1-0:72.7.0(229.0*V)\r\n",
+    )
+    assert three_phase != TELEGRAM
+    phases = parse_telegram(three_phase).phases
+    assert phases[2] == PhaseData(100, 20, 231.5, 0.43)
+    assert phases[3] == PhaseData(300, None, 229.0, None)
+
+
+def test_telegram_gas_and_water_shortcuts() -> None:
+    from mygrid_voltbridge import parse_telegram
+
+    telegram = parse_telegram(TELEGRAM)
+    assert telegram.gas is telegram.channel_of("gas")
+    assert telegram.water is telegram.channel_of("water")
+    assert telegram.gas is not None
+    assert telegram.water is not None
+
+
+def test_tariff_names_and_power_overlay() -> None:
+    from mygrid_voltbridge import TARIFF_NAMES
+
+    assert TARIFF_NAMES == {1: "day", 2: "night"}
+    snapshot = P1Data(**{**dict.fromkeys(_P1_SCALAR_FIELDS), "tariff": 1})
+    assert snapshot.tariff_name == "day"
+    assert dataclasses.replace(snapshot, tariff=None).tariff_name is None
+    assert dataclasses.replace(snapshot, tariff=9).tariff_name is None
+    reading = PowerReading(net_power=-50, import_power=0, export_power=50, tariff=2)
+    merged = reading.apply_to(snapshot)
+    assert (merged.net_power, merged.import_power, merged.export_power, merged.tariff) == (-50, 0, 50, 2)
+    assert reading.tariff_name == "night"
+    kept = dataclasses.replace(reading, tariff=None).apply_to(snapshot)
+    assert kept.tariff == 1

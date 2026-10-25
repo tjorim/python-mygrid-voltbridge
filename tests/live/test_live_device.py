@@ -76,3 +76,17 @@ async def test_device_info_has_identity_and_firmware(live: LiveDevice) -> None:
     assert info.free_heap is not None
     assert info.min_free_heap is not None
     assert info.min_free_heap <= info.free_heap
+
+
+async def test_stream_delivers_merged_updates(live: LiveDevice, host: str) -> None:
+    from contextlib import aclosing
+
+    from mygrid_voltbridge import UpdateSource, async_stream
+
+    async with aclosing(async_stream(live.client)) as stream:
+        first = await asyncio.wait_for(anext(stream), timeout=10)
+        later = [await asyncio.wait_for(anext(stream), timeout=10) for _ in range(3)]
+    assert first.source is UpdateSource.P1DATA
+    assert first.data.gas is not None
+    assert all(update.data.gas is not None for update in later)
+    assert all(update.data.net_power is not None for update in later)

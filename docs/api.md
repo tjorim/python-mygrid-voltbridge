@@ -65,9 +65,15 @@ The device advertises `<hostname>.local` (`voltbridge-` + the last three MAC byt
 | `1-0:31.4.0` | Fuse threshold, A (`999` means none; the library returns `None`) |
 | header `/FLU5\<model>` | Manufacturer code (`FLU`) and model (`253770234_A` on the test meter); `Telegram.meter_manufacturer` and `meter_model` |
 | `0-0:96.1.4` | Version info; the first two digits (`50`) match the DSMR version another P1 reader reports for this meter. Used for `Telegram.dsmr_version` when `1-3:0.2.8` is absent (inferred) |
+| `1-0:21.7.0` / `41.7.0` / `61.7.0` | Instantaneous import power on L1 / L2 / L3, kW |
+| `1-0:22.7.0` / `42.7.0` / `62.7.0` | Instantaneous export power on L1 / L2 / L3, kW |
+| `1-0:32.7.0` / `52.7.0` / `72.7.0` | Voltage on L1 / L2 / L3, V |
+| `1-0:31.7.0` / `51.7.0` / `71.7.0` | Current on L1 / L2 / L3, A |
 | `0-n:24.1.0` | M-Bus device type on channel n: 3 gas, 7 water |
 | `0-n:24.2.x` | That device's last reading: timestamp and value with unit (m³) |
 | `0-n:96.1.1` | Equipment id, hex-encoded ASCII |
+
+Per-phase codes are the standard DSMR ones, decoded into `Telegram.phases`. L1 matched the JSON `*L1` fields exactly; L2 and L3 follow the standard's scheme and are unverified on hardware (the test meter is single-phase).
 
 The test installation has a gas meter on channel 1 and a **water meter on channel 2**, which only the telegram reveals. Gas appears in both the JSON API and the telegram.
 

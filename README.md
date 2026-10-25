@@ -34,7 +34,7 @@ async def main() -> None:
         power = await client.async_get_power()  # W, positive = import
         print(power.net_power, power.tariff)
         data = await client.async_get_p1_data()  # full snapshot
-        print(data.energy_import_t1, data.phases[1].voltage)
+        print(data.energy_import, data.phases[1].voltage)  # Wh: T1 + T2
 
 
 asyncio.run(main())
@@ -48,7 +48,8 @@ asyncio.run(main())
 | `parse_datagram(bytes)` | Decode one UDP datagram into a `P1Broadcast` |
 | `VoltBridgeInfo.from_properties(txt)` | Identify a device from its `_mygrid._tcp` mDNS TXT record (`device_id` is the MAC) |
 | `async_get_status()` | `P1Status` from `/api/p1data?d=1`: Wi-Fi signal and P1 packet error statistics |
-| `async_get_telegram()` | `Telegram` from `/api/telegram`: M-Bus devices (gas, **water**), breaker, limiter, monthly peak history, CRC check |
+| `async_get_device_info()` | `DeviceInfo` from the HTML status page `/` (no JSON endpoint exists): MAC, hostname, firmware, uptime, boot reason, free heap, USB-C power. Scraped by row label, so call it rarely |
+| `async_get_telegram()` | `Telegram` from `/api/telegram`: M-Bus devices (gas, **water**), breaker, limiter, monthly peak history, CRC check, meter model and DSMR version; limiter and fuse thresholds are `None` when unset |
 | `async_get_telegram_text()` | The raw telegram string |
 | `async_reboot()` | `POST /reboot`; never retried |
 
@@ -64,7 +65,7 @@ transport = await async_listen(lambda b: print(b.data.net_power), host="192.168.
 transport.close()
 ```
 
-`host` filters by the device's IP; invalid datagrams are dropped. Use `port=49492` for the one-minute average stream. `uv run mygrid-voltbridge 192.168.0.45 --watch` prints the live stream as JSON lines. The broadcast carries no gas reading; use `async_get_p1_data()` for that. Broadcasts must reach the host, so a container or VLAN may need host networking or a broadcast relay. See [docs/api.md](docs/api.md) for the format.
+`host` filters by the device's IP; invalid datagrams are dropped. To keep a polled snapshot fresh, overlay each broadcast with `broadcast.apply_to(snapshot)` (and `broadcast.apply_to_status(status)` for the signal strength): broadcasts from other meters are ignored, fields the stream lacks (gas) keep their polled value, and a datagram without phase data does not wipe the phases. Use `port=49492` for the one-minute average stream. `uv run mygrid-voltbridge 192.168.0.45 --watch` prints the live stream as JSON lines. The broadcast carries no gas reading; use `async_get_p1_data()` for that. Broadcasts must reach the host, so a container or VLAN may need host networking or a broadcast relay. See [docs/api.md](docs/api.md) for the format.
 
 Power is in **W**, energy in **Wh**, voltage in **V**, current in **A**; the device reports kW/kWh and the library converts. Fields the meter does not report are `None`. Errors derive from `VoltBridgeError`: `VoltBridgeConnectionError`, `VoltBridgeResponseError` and `VoltBridgeNoDataError` (no P1 telegram received yet).
 

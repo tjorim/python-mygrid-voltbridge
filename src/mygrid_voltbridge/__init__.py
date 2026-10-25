@@ -4,6 +4,7 @@ from importlib.metadata import PackageNotFoundError, version
 import logging
 
 from .client import VoltBridgeClient
+from .device import DeviceInfo
 from .discovery import SERVICE_TYPE, VoltBridgeInfo
 from .exceptions import (
     VoltBridgeConnectionError,
@@ -29,6 +30,7 @@ __all__ = [
     "SERVICE_TYPE",
     "WATER",
     "BroadcastStream",
+    "DeviceInfo",
     "MBusChannel",
     "MonthlyPeak",
     "P1Broadcast",

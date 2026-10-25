@@ -64,3 +64,15 @@ async def test_status_reports_signal_and_packet_health(live: LiveDevice) -> None
     assert status.packets_total >= (status.packets_valid or 0) + (status.packets_error or 0) - 1
     assert status.error_percent is not None
     assert 0 <= status.error_percent <= 100
+
+
+async def test_device_info_has_identity_and_firmware(live: LiveDevice) -> None:
+    info = await live.fetch("/", lambda c: c.async_get_device_info())
+    assert info.mac_address is not None
+    assert info.firmware_type == "voltbridge"
+    assert info.firmware_version is not None
+    assert info.build_info is not None
+    assert info.uptime is not None
+    assert info.free_heap is not None
+    assert info.min_free_heap is not None
+    assert info.min_free_heap <= info.free_heap

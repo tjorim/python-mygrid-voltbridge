@@ -16,6 +16,7 @@ def routes() -> dict[str, tuple[int, str]]:
     return {
         "/api/power": (200, (FIXTURES / "power.json").read_text()),
         "/api/p1data": (200, (FIXTURES / "p1data.json").read_text()),
+        "/": (200, (FIXTURES / "status_page.html").read_text(encoding="utf-8")),
         "/api/p1data?d=1": (200, (FIXTURES / "status.json").read_text()),
     }
 

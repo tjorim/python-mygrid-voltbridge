@@ -1,6 +1,6 @@
 import asyncio
 import dataclasses
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 import json
 from pathlib import Path
 from typing import Any
@@ -10,6 +10,7 @@ from aiohttp.test_utils import TestServer
 import pytest
 
 from mygrid_voltbridge import (
+    DeviceInfo,
     P1Data,
     PowerReading,
     VoltBridgeClient,
@@ -210,7 +211,9 @@ def test_telegram_parsing() -> None:
     assert telegram.header == "/FLU5\\000000000_A"
     assert telegram.timestamp == datetime(2026, 10, 23, 19, 16, 35, tzinfo=UTC)
     assert telegram.breaker_state == 1
-    assert (telegram.limiter_threshold, telegram.fuse_threshold) == (999900, 999)
+    assert (telegram.limiter_threshold, telegram.fuse_threshold) == (None, None)
+    assert (telegram.meter_manufacturer, telegram.meter_model) == ("FLU", "000000000_A")
+    assert telegram.dsmr_version == "50"
     assert (telegram.avg_demand, telegram.peak_demand) == (26, 2348)
     assert telegram.peak_demand_at == datetime(2026, 10, 21, 18, 15, tzinfo=UTC)
     assert [p.power for p in telegram.monthly_peaks] == [2780, 3576, 2811]
@@ -397,3 +400,67 @@ async def test_status_needs_data(
     routes["/api/p1data?d=1"] = (200, json.dumps({"hasData": False}))
     with pytest.raises(VoltBridgeNoDataError):
         await make_client(device, session).async_get_status()
+
+
+def test_telegram_reports_configured_limits_and_unknown_identity() -> None:
+    from mygrid_voltbridge import parse_telegram
+
+    text = TELEGRAM.replace("0-0:17.0.0(999.9*kW)", "0-0:17.0.0(006.9*kW)")
+    text = text.replace("1-0:31.4.0(999*A)", "1-0:31.4.0(040*A)")
+    telegram = dataclasses.replace(parse_telegram(text), header="not a header", objects={})
+    assert telegram.meter_manufacturer is None
+    assert telegram.meter_model is None
+    assert telegram.dsmr_version is None
+    # CRC is not valid after the edit, but the thresholds are still decoded.
+    edited = parse_telegram(text)
+    assert (edited.limiter_threshold, edited.fuse_threshold) == (6900, 40)
+    assert not edited.crc_valid
+
+
+def test_p1_data_energy_totals() -> None:
+    assert P1Data(**dict.fromkeys(_P1_SCALAR_FIELDS)).energy_import is None
+    data = dataclasses.replace(
+        P1Data(**dict.fromkeys(_P1_SCALAR_FIELDS)),
+        energy_import_t1=3673837,
+        energy_import_t2=4444808,
+        energy_export_t2=65,
+    )
+    assert data.energy_import == 8118645
+    assert data.energy_export == 65
+
+
+async def test_device_info(device: FakeDevice, session: aiohttp.ClientSession) -> None:
+    info = await make_client(device, session).async_get_device_info()
+    assert info.mac_address == "aa:bb:cc:dd:ee:ff"
+    assert info.hostname == "voltbridge-DDEEFF.local"
+    assert (info.firmware_type, info.firmware_version, info.firmware_variant) == ("voltbridge", 15, 6)
+    assert info.build_info == "app:build-15.6, idf:v6.0.1, date:202609272035"
+    assert info.uptime == timedelta(hours=9, minutes=23, seconds=32)
+    assert (info.boot_reason, info.last_reboot_reason) == ("Power on", "Power on")
+    assert (info.free_heap, info.min_free_heap) == (38896, 768)
+    assert (info.usb_power_connected, info.p1_out_connected) == (False, True)
+
+
+def test_device_info_tolerates_missing_and_odd_rows() -> None:
+    page = (
+        "<table><tr><td>MAC address</td><td>not a mac</td></tr>"
+        "<tr><td>Firmware type, version, variant</td><td>voltbridge, 16, 1</td></tr>"
+        "<tr><td>Uptime</td><td>2 days, 3:04:05</td></tr>"
+        "<tr><td>Free heap</td><td>plenty</td></tr>"
+        "<tr><td>USB-C power</td><td><b>Connected</b></td></tr></table>"
+    )
+    info = DeviceInfo.from_html(page)
+    assert info.mac_address is None
+    assert (info.firmware_version, info.firmware_variant) == (16, 1)
+    assert info.uptime == timedelta(days=2, hours=3, minutes=4, seconds=5)
+    assert (info.free_heap, info.min_free_heap, info.hostname, info.build_info) == (None, None, None, None)
+    assert info.usb_power_connected is True
+    assert info.p1_out_connected is None
+
+
+@pytest.mark.parametrize(
+    "page", ["", "<html>Not Found</html>", "<table><tr><td>Uptime</td><td>1:00:00</td></tr></table>"]
+)
+def test_device_info_rejects_other_pages(page: str) -> None:
+    with pytest.raises(VoltBridgeResponseError):
+        DeviceInfo.from_html(page)

@@ -10,6 +10,7 @@ from typing import Any, Self
 
 import aiohttp
 
+from .device import DeviceInfo
 from .exceptions import VoltBridgeConnectionError, VoltBridgeResponseError, VoltBridgeUnsupportedError
 from .models import P1Data, P1Status, PowerReading
 from .telegram import Telegram, parse_telegram
@@ -82,6 +83,14 @@ class VoltBridgeClient:
     async def async_get_status(self) -> P1Status:
         """Read the Wi-Fi signal and P1 packet statistics (``/api/p1data?d=1``)."""
         return P1Status.from_payload(await self._json("/api/p1data?d=1"))
+
+    async def async_get_device_info(self) -> DeviceInfo:
+        """Read the adapter's MAC, firmware, uptime and memory from the HTML status page (``/``).
+
+        The page is scraped, since the device has no JSON endpoint for this.
+        It is larger than the JSON replies, so call it rarely.
+        """
+        return DeviceInfo.from_html((await self._request("GET", "/")).decode("utf-8", errors="replace"))
 
     async def async_get_telegram_text(self) -> str:
         """Read the raw DSMR telegram (``/api/telegram``), unmodified."""

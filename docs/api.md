@@ -4,7 +4,7 @@ Captured 2026-10-23 from one device, firmware `voltbridge`, version 15, variant 
 
 | Endpoint | Method | Notes |
 | --- | --- | --- |
-| `/` | GET | HTML status page; polls the JSON endpoints below |
+| `/` | GET | HTML status page; polls the JSON endpoints below. Its System table is the only source of the adapter's MAC address, hostname, firmware (`voltbridge, 15, 6` and `app:build-15.6, idf:v6.0.1, date:...`), uptime, boot reasons, free/minimum free heap and USB-C power; decoded by `DeviceInfo.from_html`. No JSON endpoint carries these (`/api/info`, `/api/device`, `/api/version`, `/api/status`, `/api/system` return 404) |
 | `/api/power` | GET | `netPowerW`, `importPowerW`, `exportPowerW`, `tariff`, `hasData` |
 | `/api/p1data` | GET | Full telegram, see `tests/fixtures/p1data.json` |
 | `/api/telegram` | GET | The raw DSMR/Fluvius telegram as `text/plain` with the meter's `!XXXX` CRC (CRC-16/ARC, valid as served). Carries everything the JSON endpoints omit: water and other M-Bus devices, breaker and limiter state, monthly peak history |
@@ -61,8 +61,10 @@ The device advertises `<hostname>.local` (`voltbridge-` + the last three MAC byt
 | `1-0:1.6.0` | Monthly peak so far: timestamp and kW (JSON `peakDemand` / `peakDemandAt`) |
 | `0-0:98.1.0` | Peak history: count, then (month end)(peak time)(kW) triples |
 | `0-0:96.3.10` | Breaker state: 0 open, 1 closed, 2 ready for reconnection |
-| `0-0:17.0.0` | Limiter threshold, kW (`999.9` means none) |
-| `1-0:31.4.0` | Fuse threshold, A (`999` means none) |
+| `0-0:17.0.0` | Limiter threshold, kW (`999.9` means none; the library returns `None`) |
+| `1-0:31.4.0` | Fuse threshold, A (`999` means none; the library returns `None`) |
+| header `/FLU5\<model>` | Manufacturer code (`FLU`) and model (`253770234_A` on the test meter); `Telegram.meter_manufacturer` and `meter_model` |
+| `0-0:96.1.4` | Version info; the first two digits (`50`) match the DSMR version another P1 reader reports for this meter. Used for `Telegram.dsmr_version` when `1-3:0.2.8` is absent (inferred) |
 | `0-n:24.1.0` | M-Bus device type on channel n: 3 gas, 7 water |
 | `0-n:24.2.x` | That device's last reading: timestamp and value with unit (m³) |
 | `0-n:96.1.1` | Equipment id, hex-encoded ASCII |

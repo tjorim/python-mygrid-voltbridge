@@ -134,6 +134,16 @@ class P1Data:
     gas: float | None
     phases: Mapping[int, PhaseData] = field(default_factory=dict)
 
+    @property
+    def energy_import(self) -> int | None:
+        """Return total import in Wh (T1 + T2), or ``None`` if the meter reports neither."""
+        return _total(self.energy_import_t1, self.energy_import_t2)
+
+    @property
+    def energy_export(self) -> int | None:
+        """Return total export in Wh (T1 + T2), or ``None`` if the meter reports neither."""
+        return _total(self.energy_export_t1, self.energy_export_t2)
+
     @classmethod
     def from_payload(cls, payload: object) -> "P1Data":
         """Build from a ``/api/p1data`` payload."""
@@ -158,6 +168,11 @@ class P1Data:
             gas=_number(data, "gasM3"),
             phases=_phases(data),
         )
+
+
+def _total(*parts: int | None) -> int | None:
+    known = [part for part in parts if part is not None]
+    return sum(known) if known else None
 
 
 def _text(payload: Mapping[str, Any], key: str) -> str | None:

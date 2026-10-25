@@ -8,8 +8,22 @@ Captured 2026-10-23 from one device, firmware `voltbridge`, version 15, variant 
 | `/api/power` | GET | `netPowerW`, `importPowerW`, `exportPowerW`, `tariff`, `hasData` |
 | `/api/p1data` | GET | Full telegram, see `tests/fixtures/p1data.json` |
 | `/api/telegram` | GET | The raw DSMR/Fluvius telegram as `text/plain` with the meter's `!XXXX` CRC (CRC-16/ARC, valid as served). Carries everything the JSON endpoints omit: water and other M-Bus devices, breaker and limiter state, monthly peak history |
-| `/api/p1data?d=1` | GET | Lighter variant used by the page: averages, totals, Wi-Fi RSSI, packet counters |
+| `/api/p1data?d=1` | GET | The page's variant with Wi-Fi RSSI and packet counters. It is switched by the presence of `d`, whatever its value (`d=0`, `d=2` and an empty `d=` behave the same); other parameters are ignored. See below |
 | `/reboot` | POST | Reboots the device (form on the status page); not exercised by the capture |
+
+### The `d` variant
+
+With `d` present, `/api/p1data` drops the power, serial, peak, gas and L1 fields and adds `rssi`, `p1Fresh`, `packetsTotal`, `packetsValid`, `packetsError`, `packetsErrPerc` and the flags `hasAvg`, `hasTotals` and `hasStats`. The fields both variants share (averages and energy totals) had identical values. So the status read gives no gas, and the plain read gives no Wi-Fi or packet statistics. `P1Status` reads only `hasStats` from the flags.
+
+### Explored and not available
+
+Probed with GET only, one request per second, on firmware build 15.6: `/api`, `/api/`, `/api/p1`, `/api/info`, `/api/device`, `/api/version`, `/api/status`, `/api/system`, `/api/about`, `/api/config`, `/api/network`, `/api/health`, `/api/stats`, `/api/mbus`, `/api/gas`, `/api/water`, `/api/peaks`, `/api/history`, `/api/log`, `/api/logs`, `/api/wifi`, `/api/settings`, `/api/diag`, `/api/debug`, `/api/meter`, `/api/p1status`, `/api/udp`, `/api/mqtt`, `/api/telegram/raw`, `/info`, `/version`, `/status`, `/device`, `/health`, `/metrics`, `/debug`, `/settings`, `/robots.txt`, `/favicon.ico` and `/manifest.json` all return 404 (`text/html`, 29 bytes). Not probed, because they may change state: update/OTA, reset and other action-style paths. The status page's script calls only `/api/power` and `/api/p1data?d=1`.
+
+### mDNS
+
+The device advertises `_mygrid._tcp` (port 80) and a plain `_http._tcp` service with no TXT record. The `_mygrid._tcp` TXT record carries `model=Voltbridge P1 Meter`, `manufacturer=MyGrid`, `device_id` (the MAC), `api_path=/api/p1data`, `firmware_version` (the same string as the status page's build info) and `hardware_version=P1Wifi-rev1`. The hardware version is not on the status page.
+
+The product page documents only local MQTT for Home Assistant; the HTTP and UDP interfaces here are unofficial.
 
 Despite their names, `netPowerW` and the other power fields are in **kW**, and energy fields are in **kWh**. Negative `netPowerW` means export. `hasData: false` means no P1 telegram has been received.
 

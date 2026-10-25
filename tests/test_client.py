@@ -418,9 +418,9 @@ def test_telegram_reports_configured_limits_and_unknown_identity() -> None:
 
 
 def test_p1_data_energy_totals() -> None:
-    assert P1Data(**dict.fromkeys(_P1_SCALAR_FIELDS)).energy_import is None
+    assert P1Data(**dict.fromkeys(_P1_SCALAR_FIELDS), phases={}).energy_import is None
     data = dataclasses.replace(
-        P1Data(**dict.fromkeys(_P1_SCALAR_FIELDS)),
+        P1Data(**dict.fromkeys(_P1_SCALAR_FIELDS), phases={}),
         energy_import_t1=3673837,
         energy_import_t2=4444808,
         energy_export_t2=65,
@@ -496,7 +496,7 @@ def test_tariff_names_and_power_overlay() -> None:
     from mygrid_voltbridge import TARIFF_NAMES
 
     assert TARIFF_NAMES == {1: "day", 2: "night"}
-    snapshot = P1Data(**{**dict.fromkeys(_P1_SCALAR_FIELDS), "tariff": 1})
+    snapshot = dataclasses.replace(P1Data(**dict.fromkeys(_P1_SCALAR_FIELDS), phases={}), tariff=1)
     assert snapshot.tariff_name == "day"
     assert dataclasses.replace(snapshot, tariff=None).tariff_name is None
     assert dataclasses.replace(snapshot, tariff=9).tariff_name is None

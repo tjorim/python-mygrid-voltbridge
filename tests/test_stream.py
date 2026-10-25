@@ -1,5 +1,5 @@
 import asyncio
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import aclosing
 from pathlib import Path
 import socket
@@ -28,8 +28,13 @@ def client_for(device: FakeDevice, session: aiohttp.ClientSession) -> VoltBridge
     return VoltBridgeClient("127.0.0.1", session, port=port, retries=0, min_request_interval=0)
 
 
-def open_stream(client: VoltBridgeClient, udp_port: int, **overrides: float) -> AsyncIterator[LiveUpdate]:
-    settings = {"poll_interval": 60, "silence_timeout": 60, "fallback_interval": 0.05, "offline_after": 5}
+def open_stream(client: VoltBridgeClient, udp_port: int, **overrides: float) -> AsyncGenerator[LiveUpdate]:
+    settings: dict[str, float] = {
+        "poll_interval": 60,
+        "silence_timeout": 60,
+        "fallback_interval": 0.05,
+        "offline_after": 5,
+    }
     return async_stream(
         client,
         **{**settings, **overrides},
@@ -39,7 +44,7 @@ def open_stream(client: VoltBridgeClient, udp_port: int, **overrides: float) -> 
     )
 
 
-async def next_update(stream: AsyncIterator[LiveUpdate]) -> LiveUpdate:
+async def next_update(stream: AsyncGenerator[LiveUpdate]) -> LiveUpdate:
     async with asyncio.timeout(3):
         return await anext(stream)
 
@@ -118,8 +123,13 @@ async def test_failure_of_the_first_read_propagates(
         await next_update(open_stream(client_for(device, session), free_udp_port()))
 
 
-@pytest.mark.parametrize("name", ["poll_interval", "silence_timeout", "fallback_interval", "offline_after"])
-def test_non_positive_intervals_are_rejected(device: FakeDevice, name: str) -> None:
+def test_non_positive_intervals_are_rejected() -> None:
     client = VoltBridgeClient("127.0.0.1")
-    with pytest.raises(ValueError, match=name):
-        async_stream(client, **{name: 0})
+    with pytest.raises(ValueError, match="poll_interval"):
+        async_stream(client, poll_interval=0)
+    with pytest.raises(ValueError, match="silence_timeout"):
+        async_stream(client, silence_timeout=0)
+    with pytest.raises(ValueError, match="fallback_interval"):
+        async_stream(client, fallback_interval=-1)
+    with pytest.raises(ValueError, match="offline_after"):
+        async_stream(client, offline_after=0)

@@ -97,13 +97,13 @@ class Telegram:
     def meter_manufacturer(self) -> str | None:
         """Return the three-letter manufacturer code from the header (``FLU``)."""
         match = _HEADER.match(self.header)
-        return match.group("manufacturer") if match else None
+        return str(match.group("manufacturer")) if match else None
 
     @property
     def meter_model(self) -> str | None:
         """Return the model identifier from the header, e.g. ``253770234_A``."""
         match = _HEADER.match(self.header)
-        return match.group("model").strip() if match else None
+        return str(match.group("model")).strip() if match else None
 
     @property
     def dsmr_version(self) -> str | None:

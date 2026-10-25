@@ -50,12 +50,12 @@ class DeviceInfo:
         rows = {_clean(label): _clean(value) for label, value in _ROW.findall(page)}
         mac = rows.get("MAC address")
         firmware = _FIRMWARE.match(rows.get("Firmware type, version, variant", ""))
-        if not (mac or firmware):
+        if mac is None and firmware is None:
             msg = "not a VoltBridge status page"
             raise VoltBridgeResponseError(msg)
         hostname = _HOSTNAME.search(rows.get("IP address", ""))
         return cls(
-            mac_address=mac.lower() if mac and _MAC.match(mac) else None,
+            mac_address=mac.lower() if mac is not None and _MAC.match(mac) else None,
             hostname=hostname.group(1) if hostname else None,
             firmware_type=firmware.group(1) if firmware else None,
             firmware_version=int(firmware.group(2)) if firmware else None,

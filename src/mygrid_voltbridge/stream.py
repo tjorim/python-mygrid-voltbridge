@@ -8,7 +8,7 @@ the broadcasts are silent, and polls ``/api/p1data`` for what they lack (gas).
 """
 
 import asyncio
-from collections.abc import AsyncIterator, Callable, Coroutine
+from collections.abc import AsyncGenerator, Callable, Coroutine
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
@@ -17,7 +17,7 @@ from typing import Any
 
 from .client import VoltBridgeClient
 from .exceptions import VoltBridgeConnectionError, VoltBridgeError
-from .models import P1Data
+from .models import P1Data, PowerReading
 from .udp import AGGREGATED_PORT, P1_PORT, BroadcastStream, P1Broadcast, async_listen
 
 _LOGGER = logging.getLogger(__name__)
@@ -71,7 +71,7 @@ def async_stream(
     udp_port: int = P1_PORT,
     aggregated_port: int | None = AGGREGATED_PORT,
     bind: str = "0.0.0.0",  # noqa: S104 - broadcasts arrive on any interface
-) -> AsyncIterator[LiveUpdate]:
+) -> AsyncGenerator[LiveUpdate]:
     """Follow one VoltBridge, combining UDP push with HTTP reads.
 
     - The first update is a full ``/api/p1data`` read; its errors propagate.
@@ -123,7 +123,7 @@ class _Feed:
         self._udp_active = False
         self._last_udp = 0.0
 
-    async def run(self) -> AsyncIterator[LiveUpdate]:
+    async def run(self) -> AsyncGenerator[LiveUpdate]:
         """Yield updates until the device has been silent for ``offline_after``."""
         self._loop = asyncio.get_running_loop()
         data = await self._client.async_get_p1_data()
@@ -137,7 +137,7 @@ class _Feed:
             last_ok = self._loop.time()  # the consumer's time spent on the update does not count
             while True:
                 source, payload = await self._next(last_ok)
-                merged = self._merge(data, source, payload)
+                merged = self._merge(data, payload)
                 if merged is data:  # another meter's broadcast
                     continue
                 if source is UpdateSource.P1DATA:
@@ -191,10 +191,10 @@ class _Feed:
         return source, payload
 
     @staticmethod
-    def _merge(data: P1Data, source: UpdateSource, payload: Any) -> P1Data:
-        if source is UpdateSource.P1DATA:
+    def _merge(data: P1Data, payload: P1Data | P1Broadcast | PowerReading) -> P1Data:
+        if isinstance(payload, P1Data):
             return payload
-        return payload.apply_to(data)  # a P1Broadcast or a PowerReading
+        return payload.apply_to(data)
 
     async def _guarded(self, work: Callable[[], Coroutine[Any, Any, None]]) -> None:
         try:

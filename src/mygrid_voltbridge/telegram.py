@@ -11,12 +11,26 @@ from datetime import UTC, datetime, timedelta, timezone
 import re
 
 from .exceptions import VoltBridgeResponseError
+from .models import PhaseData
 
 _OBIS = re.compile(r"^(\d+-\d+:\d+\.\d+\.\d+)((?:\([^)]*\))*)$")
 _GROUP = re.compile(r"\(([^)]*)\)")
 _TIMESTAMP = re.compile(r"^(\d{12})([SW])$")
 _VALUE = re.compile(r"^(-?\d+(?:\.\d+)?)\*(\S+)$")
 _MBUS = re.compile(r"^0-(\d+):24\.(\d+)\.\d+$")
+
+_HEADER = re.compile(r"^/(?P<manufacturer>[A-Za-z]{3})\w\\?(?P<model>.+)$")
+
+# DSMR OBIS codes per phase: import power, export power, voltage, current.
+_PHASE_CODES = {
+    1: ("1-0:21.7.0", "1-0:22.7.0", "1-0:32.7.0", "1-0:31.7.0"),
+    2: ("1-0:41.7.0", "1-0:42.7.0", "1-0:52.7.0", "1-0:51.7.0"),
+    3: ("1-0:61.7.0", "1-0:62.7.0", "1-0:72.7.0", "1-0:71.7.0"),
+}
+
+# The meter reports these when no limiter or fuse threshold is configured.
+_NO_LIMITER_KW = 999.9
+_NO_FUSE_A = 999
 
 # DSMR M-Bus device type codes.
 GAS = 3
@@ -67,6 +81,43 @@ class Telegram:
     monthly_peaks: tuple[MonthlyPeak, ...]
     channels: Mapping[int, MBusChannel]
     objects: Mapping[str, tuple[tuple[str, ...], ...]] = field(default_factory=dict)
+    phases: Mapping[int, PhaseData] = field(default_factory=dict)
+
+    @property
+    def gas(self) -> MBusChannel | None:
+        """Return the first gas meter on the M-Bus, if any."""
+        return self.channel_of("gas")
+
+    @property
+    def water(self) -> MBusChannel | None:
+        """Return the first water meter on the M-Bus, if any."""
+        return self.channel_of("water")
+
+    @property
+    def meter_manufacturer(self) -> str | None:
+        """Return the three-letter manufacturer code from the header (``FLU``)."""
+        match = _HEADER.match(self.header)
+        return str(match.group("manufacturer")) if match else None
+
+    @property
+    def meter_model(self) -> str | None:
+        """Return the model identifier from the header, e.g. ``253770234_A``."""
+        match = _HEADER.match(self.header)
+        return str(match.group("model")).strip() if match else None
+
+    @property
+    def dsmr_version(self) -> str | None:
+        """Return the DSMR version, e.g. ``50``.
+
+        Read from ``1-3:0.2.8`` when present. Fluvius meters omit it, so this
+        falls back to the first two digits of ``0-0:96.1.4`` (inferred: it
+        agrees with the version another P1 reader reports for the same meter).
+        """
+        for code, digits in (("1-3:0.2.8", 2), ("0-0:96.1.4", 2)):
+            group = self.objects.get(code, ((),))[0]
+            if group and group[0][:digits].isdigit():
+                return group[0][:digits]
+        return None
 
     def channel_of(self, kind: str) -> MBusChannel | None:
         """Return the first M-Bus device of a kind (``gas``, ``water``, ``heat``)."""
@@ -112,6 +163,32 @@ def _quantity(text: str, unit: str) -> float | None:
 def _kilo(text: str, unit: str) -> int | None:
     value = _quantity(text, unit)
     return None if value is None else round(value * 1000)
+
+
+def _threshold(group: tuple[str, ...], unit: str, none_value: float, factor: int) -> int | None:
+    """Return a threshold scaled to W or A, or ``None`` if unset (the meter's "no limit" value)."""
+    value = _quantity(group[0], unit) if group else None
+    return None if value is None or value == none_value else round(value * factor)
+
+
+def _phases(objects: Mapping[str, tuple[tuple[str, ...], ...]]) -> dict[int, PhaseData]:
+    """Decode the per-phase values using the standard DSMR codes.
+
+    Only L1 is checked against a real meter; L2 and L3 follow the standard's
+    code scheme (41/42/52/51 and 61/62/72/71) and are unverified on hardware.
+    """
+    phases = {}
+    for number, codes in _PHASE_CODES.items():
+        if not any(code in objects for code in codes):
+            continue
+        imported, exported, voltage, current = (_first(objects, code) for code in codes)
+        phases[number] = PhaseData(
+            import_power=_kilo(imported[0], "kW") if imported else None,
+            export_power=_kilo(exported[0], "kW") if exported else None,
+            voltage=_quantity(voltage[0], "V") if voltage else None,
+            current=_quantity(current[0], "A") if current else None,
+        )
+    return phases
 
 
 def _first(objects: Mapping[str, tuple[tuple[str, ...], ...]], code: str) -> tuple[str, ...]:
@@ -203,12 +280,13 @@ def parse_telegram(text: str) -> Telegram:
         crc_valid=crc_valid,
         timestamp=_timestamp(timestamp[0]) if timestamp else None,
         breaker_state=_int(_first(objects, "0-0:96.3.10")[0]) if "0-0:96.3.10" in objects else None,
-        limiter_threshold=_kilo(limiter[0], "kW") if limiter else None,
-        fuse_threshold=round(q) if fuse and (q := _quantity(fuse[0], "A")) is not None else None,
+        limiter_threshold=_threshold(limiter, "kW", _NO_LIMITER_KW, 1000),
+        fuse_threshold=_threshold(fuse, "A", _NO_FUSE_A, 1),
         avg_demand=_kilo(demand[0], "kW") if demand else None,
         peak_demand=_kilo(peak[1], "kW") if len(peak) > 1 else None,
         peak_demand_at=_timestamp(peak[0]) if peak else None,
         monthly_peaks=_peaks(history),
         channels=_channels(objects),
         objects=objects,
+        phases=_phases(objects),
     )

@@ -4,6 +4,7 @@ from importlib.metadata import PackageNotFoundError, version
 import logging
 
 from .client import VoltBridgeClient
+from .device import DeviceInfo
 from .discovery import SERVICE_TYPE, VoltBridgeInfo
 from .exceptions import (
     VoltBridgeConnectionError,
@@ -12,7 +13,8 @@ from .exceptions import (
     VoltBridgeResponseError,
     VoltBridgeUnsupportedError,
 )
-from .models import P1Data, P1Status, PhaseData, PowerReading
+from .models import TARIFF_NAMES, P1Data, P1Status, PhaseData, PowerReading
+from .stream import LiveUpdate, UpdateSource, async_stream
 from .telegram import GAS, HEAT, WATER, MBusChannel, MonthlyPeak, Telegram, parse_telegram
 from .udp import BroadcastStream, P1Broadcast, async_listen, parse_datagram
 
@@ -27,8 +29,11 @@ __all__ = [
     "GAS",
     "HEAT",
     "SERVICE_TYPE",
+    "TARIFF_NAMES",
     "WATER",
     "BroadcastStream",
+    "DeviceInfo",
+    "LiveUpdate",
     "MBusChannel",
     "MonthlyPeak",
     "P1Broadcast",
@@ -37,6 +42,7 @@ __all__ = [
     "PhaseData",
     "PowerReading",
     "Telegram",
+    "UpdateSource",
     "VoltBridgeClient",
     "VoltBridgeConnectionError",
     "VoltBridgeError",
@@ -46,6 +52,7 @@ __all__ = [
     "VoltBridgeUnsupportedError",
     "__version__",
     "async_listen",
+    "async_stream",
     "parse_datagram",
     "parse_telegram",
 ]

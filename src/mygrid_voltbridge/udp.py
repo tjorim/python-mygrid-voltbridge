@@ -9,7 +9,7 @@ a fixed field map instead of with generated protobuf code.
 
 import asyncio
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, fields, replace
 from datetime import UTC, datetime
 from enum import IntEnum
 import logging
@@ -17,7 +17,7 @@ import struct
 from typing import Any, override
 
 from .exceptions import VoltBridgeResponseError
-from .models import P1Data, PhaseData
+from .models import P1Data, P1Status, PhaseData
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -30,6 +30,9 @@ _LENGTH_DELIMITED = 2  # protobuf wire type
 _PEAK_FIELD = 2  # field 2 of the demand message
 
 _Fields = dict[int, list[Any]]
+
+# Identity and the merged phases are handled separately in ``apply_to``.
+_KEPT_FROM_SNAPSHOT = frozenset({"meter_serial", "meter_version", "phases"})
 
 
 class BroadcastStream(IntEnum):
@@ -54,6 +57,36 @@ class P1Broadcast:
     country: str | None
     software_version: str | None
     data: P1Data
+
+    def apply_to(self, snapshot: P1Data) -> P1Data:
+        """Return ``snapshot`` updated with this broadcast's fresher values.
+
+        Meant to overlay the live stream on the last ``async_get_p1_data()``
+        result, which stays the source for what the broadcasts lack (gas).
+
+        - A broadcast from another meter (serial differs or is unknown) leaves
+          the snapshot untouched, since broadcasts reach every host on the LAN.
+        - Only fields the broadcast reports replace the snapshot's: the
+          aggregated stream refreshes the one-minute averages and totals but
+          never clears the instantaneous power.
+        - The live stream decides which phases exist, as a meter can gain or
+          lose L2/L3. A datagram without phase data keeps the snapshot's.
+        """
+        data = self.data
+        if data.meter_serial is None or data.meter_serial != snapshot.meter_serial:
+            return snapshot
+        updates: dict[str, Any] = {
+            field.name: value
+            for field in fields(P1Data)
+            if field.name not in _KEPT_FROM_SNAPSHOT and (value := getattr(data, field.name)) is not None
+        }
+        if self.stream is BroadcastStream.P1 and data.phases:
+            updates["phases"] = dict(data.phases)
+        return replace(snapshot, **updates)
+
+    def apply_to_status(self, status: P1Status) -> P1Status:
+        """Return ``status`` with the signal strength from this broadcast."""
+        return status if self.rssi is None else replace(status, rssi=self.rssi)
 
 
 def _crc16_arc(data: bytes) -> int:

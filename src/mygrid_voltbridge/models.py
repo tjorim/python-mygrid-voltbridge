@@ -5,11 +5,14 @@ integer W and Wh so values compare and sum exactly.
 """
 
 from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from typing import Any, cast
 
 from .exceptions import VoltBridgeNoDataError, VoltBridgeResponseError
+
+# Belgian meters: tariff 1 is the day rate, tariff 2 the night rate.
+TARIFF_NAMES: Mapping[int, str] = {1: "day", 2: "night"}
 
 
 def _number(payload: Mapping[str, Any], key: str) -> float | None:
@@ -46,6 +49,22 @@ class PowerReading:
     import_power: int
     export_power: int
     tariff: int | None
+
+    @property
+    def tariff_name(self) -> str | None:
+        """Return ``day`` or ``night``, or ``None`` if unknown."""
+        return TARIFF_NAMES.get(self.tariff) if self.tariff is not None else None
+
+    def apply_to(self, snapshot: "P1Data") -> "P1Data":
+        """Return ``snapshot`` with these power values (and the tariff, if known)."""
+        updates: dict[str, Any] = {
+            "net_power": self.net_power,
+            "import_power": self.import_power,
+            "export_power": self.export_power,
+        }
+        if self.tariff is not None:
+            updates["tariff"] = self.tariff
+        return replace(snapshot, **updates)
 
     @classmethod
     def from_payload(cls, payload: object) -> "PowerReading":
@@ -134,6 +153,21 @@ class P1Data:
     gas: float | None
     phases: Mapping[int, PhaseData] = field(default_factory=dict)
 
+    @property
+    def tariff_name(self) -> str | None:
+        """Return ``day`` or ``night``, or ``None`` if unknown."""
+        return TARIFF_NAMES.get(self.tariff) if self.tariff is not None else None
+
+    @property
+    def energy_import(self) -> int | None:
+        """Return total import in Wh (T1 + T2), or ``None`` if the meter reports neither."""
+        return _total(self.energy_import_t1, self.energy_import_t2)
+
+    @property
+    def energy_export(self) -> int | None:
+        """Return total export in Wh (T1 + T2), or ``None`` if the meter reports neither."""
+        return _total(self.energy_export_t1, self.energy_export_t2)
+
     @classmethod
     def from_payload(cls, payload: object) -> "P1Data":
         """Build from a ``/api/p1data`` payload."""
@@ -158,6 +192,11 @@ class P1Data:
             gas=_number(data, "gasM3"),
             phases=_phases(data),
         )
+
+
+def _total(*parts: int | None) -> int | None:
+    known = [part for part in parts if part is not None]
+    return sum(known) if known else None
 
 
 def _text(payload: Mapping[str, Any], key: str) -> str | None:

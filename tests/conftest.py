@@ -16,6 +16,7 @@ def routes() -> dict[str, tuple[int, str]]:
     return {
         "/api/power": (200, (FIXTURES / "power.json").read_text()),
         "/api/p1data": (200, (FIXTURES / "p1data.json").read_text()),
+        "/": (200, (FIXTURES / "status_page.html").read_text(encoding="utf-8")),
         "/api/p1data?d=1": (200, (FIXTURES / "status.json").read_text()),
     }
 
@@ -23,8 +24,10 @@ def routes() -> dict[str, tuple[int, str]]:
 @pytest.fixture
 async def device(routes: dict[str, tuple[int, str]]) -> AsyncIterator[FakeDevice]:
     rebooted: list[str] = []
+    requests: list[str] = []
 
     async def handler(request: web.Request) -> web.Response:
+        requests.append(request.path_qs)
         if request.path == "/reboot" and request.method == "POST":
             rebooted.append("x")
             return web.Response(text="ok")
@@ -36,6 +39,7 @@ async def device(routes: dict[str, tuple[int, str]]) -> AsyncIterator[FakeDevice
     server = FakeDevice(app)
     await server.start_server()
     server.rebooted = rebooted
+    server.requests = requests
     yield server
     await server.close()
 

@@ -1,5 +1,6 @@
 import asyncio
 from collections.abc import Callable
+import dataclasses
 from datetime import UTC, datetime
 from pathlib import Path
 import socket
@@ -7,7 +8,7 @@ import socket
 import pytest
 
 from mygrid_voltbridge import VoltBridgeResponseError
-from mygrid_voltbridge.models import PhaseData
+from mygrid_voltbridge.models import P1Data, P1Status, PhaseData
 from mygrid_voltbridge.udp import BroadcastStream, P1Broadcast, _crc16_arc, async_listen, parse_datagram
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -183,3 +184,73 @@ def test_zero_average_demand_is_omitted_on_the_wire_but_decoded_as_zero() -> Non
     assert broadcast.data.avg_demand == 0
     assert broadcast.data.peak_demand == 2348
     assert broadcast.data.import_power == parse_datagram(load("p1")).data.import_power
+
+
+def _snapshot() -> P1Data:
+    """An HTTP-style snapshot of the meter in the captured datagrams."""
+    return P1Data(
+        meter_serial="1SAG0000000000",
+        meter_version="50217",
+        import_power=100,
+        export_power=0,
+        net_power=100,
+        avg_import_1min=90,
+        avg_export_1min=0,
+        avg_demand=50,
+        peak_demand=2348,
+        peak_demand_at=datetime(2026, 10, 21, 18, 15, tzinfo=UTC),
+        tariff=2,
+        energy_import_t1=1,
+        energy_import_t2=2,
+        energy_export_t1=3,
+        energy_export_t2=4,
+        gas=440.5,
+        phases={1: PhaseData(100, 0, 230.0, 0.5), 3: PhaseData(1, 1, 1.0, 1.0)},
+    )
+
+
+def test_live_broadcast_overlays_the_snapshot() -> None:
+    broadcast = parse_datagram(load("p1"))
+    merged = broadcast.apply_to(_snapshot())
+    assert (merged.import_power, merged.net_power) == (267, 267)
+    assert merged.tariff == 1
+    assert merged.gas == 440.5  # the stream has no gas
+    assert merged.avg_import_1min == 90  # nor one-minute averages
+    assert merged.meter_version == "50217"
+    assert merged.phases == broadcast.data.phases  # L3 disappeared with the meter
+
+
+def test_aggregated_broadcast_refreshes_averages_only() -> None:
+    broadcast = parse_datagram(load("aggregated"))
+    snapshot = _snapshot()
+    merged = broadcast.apply_to(snapshot)
+    assert (merged.avg_import_1min, merged.avg_export_1min) == (
+        broadcast.data.avg_import_1min,
+        broadcast.data.avg_export_1min,
+    )
+    assert (merged.import_power, merged.net_power) == (100, 100)
+    assert merged.phases == snapshot.phases
+
+
+def test_broadcast_without_phases_keeps_the_snapshot_phases() -> None:
+    broadcast = parse_datagram(load("p1"))
+    bare = dataclasses.replace(broadcast, data=dataclasses.replace(broadcast.data, phases={}))
+    assert bare.apply_to(_snapshot()).phases == _snapshot().phases
+
+
+@pytest.mark.parametrize("serial", ["1SAG9999999999", None])
+def test_broadcast_from_another_meter_is_ignored(serial: str | None) -> None:
+    broadcast = parse_datagram(load("p1"))
+    other = dataclasses.replace(broadcast, data=dataclasses.replace(broadcast.data, meter_serial=serial))
+    snapshot = _snapshot()
+    assert other.apply_to(snapshot) is snapshot
+    assert dataclasses.replace(snapshot, meter_serial=None) == broadcast.apply_to(
+        dataclasses.replace(snapshot, meter_serial=None)
+    )
+
+
+def test_broadcast_updates_the_signal_strength() -> None:
+    status = P1Status(rssi=-90, p1_fresh=True, packets_total=10, packets_valid=10, packets_error=0, error_percent=0.0)
+    broadcast = parse_datagram(load("p1"))
+    assert broadcast.apply_to_status(status).rssi == -79
+    assert dataclasses.replace(broadcast, rssi=None).apply_to_status(status) is status

@@ -64,3 +64,29 @@ async def test_status_reports_signal_and_packet_health(live: LiveDevice) -> None
     assert status.packets_total >= (status.packets_valid or 0) + (status.packets_error or 0) - 1
     assert status.error_percent is not None
     assert 0 <= status.error_percent <= 100
+
+
+async def test_device_info_has_identity_and_firmware(live: LiveDevice) -> None:
+    info = await live.fetch("/", lambda c: c.async_get_device_info())
+    assert info.mac_address is not None
+    assert info.firmware_type == "voltbridge"
+    assert info.firmware_version is not None
+    assert info.build_info is not None
+    assert info.uptime is not None
+    assert info.free_heap is not None
+    assert info.min_free_heap is not None
+    assert info.min_free_heap <= info.free_heap
+
+
+async def test_stream_delivers_merged_updates(live: LiveDevice, host: str) -> None:
+    from contextlib import aclosing
+
+    from mygrid_voltbridge import UpdateSource, async_stream
+
+    async with aclosing(async_stream(live.client)) as stream:
+        first = await asyncio.wait_for(anext(stream), timeout=10)
+        later = [await asyncio.wait_for(anext(stream), timeout=10) for _ in range(3)]
+    assert first.source is UpdateSource.P1DATA
+    assert first.data.gas is not None
+    assert all(update.data.gas is not None for update in later)
+    assert all(update.data.net_power is not None for update in later)

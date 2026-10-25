@@ -7,3 +7,4 @@ class FakeDevice(TestServer):
     """A test server that remembers reboot requests."""
 
     rebooted: list[str]
+    requests: list[str]

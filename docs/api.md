@@ -4,12 +4,26 @@ Captured 2026-10-23 from one device, firmware `voltbridge`, version 15, variant 
 
 | Endpoint | Method | Notes |
 | --- | --- | --- |
-| `/` | GET | HTML status page; polls the JSON endpoints below |
+| `/` | GET | HTML status page; polls the JSON endpoints below. Its System table is the only source of the adapter's MAC address, hostname, firmware (`voltbridge, 15, 6` and `app:build-15.6, idf:v6.0.1, date:...`), uptime, boot reasons, free/minimum free heap and USB-C power; decoded by `DeviceInfo.from_html`. No JSON endpoint carries these (`/api/info`, `/api/device`, `/api/version`, `/api/status`, `/api/system` return 404) |
 | `/api/power` | GET | `netPowerW`, `importPowerW`, `exportPowerW`, `tariff`, `hasData` |
 | `/api/p1data` | GET | Full telegram, see `tests/fixtures/p1data.json` |
 | `/api/telegram` | GET | The raw DSMR/Fluvius telegram as `text/plain` with the meter's `!XXXX` CRC (CRC-16/ARC, valid as served). Carries everything the JSON endpoints omit: water and other M-Bus devices, breaker and limiter state, monthly peak history |
-| `/api/p1data?d=1` | GET | Lighter variant used by the page: averages, totals, Wi-Fi RSSI, packet counters |
+| `/api/p1data?d=1` | GET | The page's variant with Wi-Fi RSSI and packet counters. It is switched by the presence of `d`, whatever its value (`d=0`, `d=2` and an empty `d=` behave the same); other parameters are ignored. See below |
 | `/reboot` | POST | Reboots the device (form on the status page); not exercised by the capture |
+
+### The `d` variant
+
+With `d` present, `/api/p1data` drops the power, serial, peak, gas and L1 fields and adds `rssi`, `p1Fresh`, `packetsTotal`, `packetsValid`, `packetsError`, `packetsErrPerc` and the flags `hasAvg`, `hasTotals` and `hasStats`. The fields both variants share (averages and energy totals) had identical values. So the status read gives no gas, and the plain read gives no Wi-Fi or packet statistics. `P1Status` reads only `hasStats` from the flags.
+
+### Explored and not available
+
+Probed with GET only, one request per second, on firmware build 15.6: `/api`, `/api/`, `/api/p1`, `/api/info`, `/api/device`, `/api/version`, `/api/status`, `/api/system`, `/api/about`, `/api/config`, `/api/network`, `/api/health`, `/api/stats`, `/api/mbus`, `/api/gas`, `/api/water`, `/api/peaks`, `/api/history`, `/api/log`, `/api/logs`, `/api/wifi`, `/api/settings`, `/api/diag`, `/api/debug`, `/api/meter`, `/api/p1status`, `/api/udp`, `/api/mqtt`, `/api/telegram/raw`, `/info`, `/version`, `/status`, `/device`, `/health`, `/metrics`, `/debug`, `/settings`, `/robots.txt`, `/favicon.ico` and `/manifest.json` all return 404 (`text/html`, 29 bytes). Not probed, because they may change state: update/OTA, reset and other action-style paths. The status page's script calls only `/api/power` and `/api/p1data?d=1`.
+
+### mDNS
+
+The device advertises `_mygrid._tcp` (port 80) and a plain `_http._tcp` service with no TXT record. The `_mygrid._tcp` TXT record carries `model=Voltbridge P1 Meter`, `manufacturer=MyGrid`, `device_id` (the MAC), `api_path=/api/p1data`, `firmware_version` (the same string as the status page's build info) and `hardware_version=P1Wifi-rev1`. The hardware version is not on the status page.
+
+The product page documents only local MQTT for Home Assistant; the HTTP and UDP interfaces here are unofficial.
 
 Despite their names, `netPowerW` and the other power fields are in **kW**, and energy fields are in **kWh**. Negative `netPowerW` means export. `hasData: false` means no P1 telegram has been received.
 
@@ -61,11 +75,19 @@ The device advertises `<hostname>.local` (`voltbridge-` + the last three MAC byt
 | `1-0:1.6.0` | Monthly peak so far: timestamp and kW (JSON `peakDemand` / `peakDemandAt`) |
 | `0-0:98.1.0` | Peak history: count, then (month end)(peak time)(kW) triples |
 | `0-0:96.3.10` | Breaker state: 0 open, 1 closed, 2 ready for reconnection |
-| `0-0:17.0.0` | Limiter threshold, kW (`999.9` means none) |
-| `1-0:31.4.0` | Fuse threshold, A (`999` means none) |
+| `0-0:17.0.0` | Limiter threshold, kW (`999.9` means none; the library returns `None`) |
+| `1-0:31.4.0` | Fuse threshold, A (`999` means none; the library returns `None`) |
+| header `/FLU5\<model>` | Manufacturer code (`FLU`) and model (`253770234_A` on the test meter); `Telegram.meter_manufacturer` and `meter_model` |
+| `0-0:96.1.4` | Version info; the first two digits (`50`) match the DSMR version another P1 reader reports for this meter. Used for `Telegram.dsmr_version` when `1-3:0.2.8` is absent (inferred) |
+| `1-0:21.7.0` / `41.7.0` / `61.7.0` | Instantaneous import power on L1 / L2 / L3, kW |
+| `1-0:22.7.0` / `42.7.0` / `62.7.0` | Instantaneous export power on L1 / L2 / L3, kW |
+| `1-0:32.7.0` / `52.7.0` / `72.7.0` | Voltage on L1 / L2 / L3, V |
+| `1-0:31.7.0` / `51.7.0` / `71.7.0` | Current on L1 / L2 / L3, A |
 | `0-n:24.1.0` | M-Bus device type on channel n: 3 gas, 7 water |
 | `0-n:24.2.x` | That device's last reading: timestamp and value with unit (m³) |
 | `0-n:96.1.1` | Equipment id, hex-encoded ASCII |
+
+Per-phase codes are the standard DSMR ones, decoded into `Telegram.phases`. L1 matched the JSON `*L1` fields exactly; L2 and L3 follow the standard's scheme and are unverified on hardware (the test meter is single-phase).
 
 The test installation has a gas meter on channel 1 and a **water meter on channel 2**, which only the telegram reveals. Gas appears in both the JSON API and the telegram.
 

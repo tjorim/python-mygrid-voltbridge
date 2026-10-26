@@ -16,7 +16,7 @@ import logging
 from typing import Any
 
 from .client import VoltBridgeClient
-from .exceptions import VoltBridgeConnectionError, VoltBridgeError
+from .exceptions import VoltBridgeConnectionError, VoltBridgeError, VoltBridgeNoDataError
 from .models import P1Data, PowerReading
 from .udp import AGGREGATED_PORT, P1_PORT, BroadcastStream, P1Broadcast, async_listen
 
@@ -41,13 +41,16 @@ class LiveUpdate:
     ``data`` mixes sources: fields not delivered by ``source`` keep the value
     of the last update that had them. ``snapshot_at`` is when the full HTTP
     snapshot underneath was read, so ``received_at - snapshot_at`` bounds the
-    age of fields only that snapshot carries, such as gas.
+    age of fields only that snapshot carries, such as gas. ``rssi`` is the Wi-Fi
+    signal strength (dBm) of the last broadcast from this meter, or ``None``
+    until one arrived; HTTP reads do not refresh it.
     """
 
     data: P1Data
     source: UpdateSource
     received_at: datetime
     snapshot_at: datetime
+    rssi: int | None = None
 
 
 @dataclass(frozen=True)
@@ -64,6 +67,7 @@ class _Settings:
 def async_stream(
     client: VoltBridgeClient,
     *,
+    initial: P1Data | None = None,
     poll_interval: float = 5.0,
     silence_timeout: float = 2.0,
     fallback_interval: float = 1.0,
@@ -75,6 +79,8 @@ def async_stream(
     """Follow one VoltBridge, combining UDP push with HTTP reads.
 
     - The first update is a full ``/api/p1data`` read; its errors propagate.
+      Pass ``initial``, a snapshot you just read, to start from it instead and
+      skip that request; it is yielded as the first update, stamped now.
     - Each broadcast from this meter is merged into the state and yielded.
     - If no live broadcast arrives for ``silence_timeout`` seconds (two missed
       datagrams at the usual 1 Hz), or UDP could not start, ``/api/power`` is
@@ -82,7 +88,9 @@ def async_stream(
       that at a second or more: the device has little memory.
     - ``/api/p1data`` is read every ``poll_interval`` seconds for gas and totals.
     - Failed reads are skipped. If nothing at all arrives for ``offline_after``
-      seconds, ``VoltBridgeConnectionError`` is raised and the stream ends.
+      seconds, the stream ends with the reason: ``VoltBridgeNoDataError`` when
+      the device answered but has no P1 data (cable unplugged), otherwise
+      ``VoltBridgeConnectionError`` chained from the last failed read.
 
     Stop it with ``contextlib.aclosing(...)`` or ``await stream.aclose()`` so
     the sockets and tasks are released. Raises ``ValueError`` for an interval
@@ -106,14 +114,15 @@ def async_stream(
         aggregated_port,
         bind,
     )
-    return _Feed(client, settings).run()
+    return _Feed(client, settings, initial).run()
 
 
 class _Feed:
     """The state and background work behind one ``async_stream``."""
 
-    def __init__(self, client: VoltBridgeClient, settings: _Settings) -> None:
+    def __init__(self, client: VoltBridgeClient, settings: _Settings, initial: P1Data | None) -> None:
         self._client = client
+        self._initial = initial
         self._settings = settings
         self._loop: asyncio.AbstractEventLoop
         self._queue: asyncio.Queue[tuple[UpdateSource | None, Any]] = asyncio.Queue()
@@ -122,13 +131,15 @@ class _Feed:
         self._serial: str | None = None
         self._udp_active = False
         self._last_udp = 0.0
+        self._last_error: VoltBridgeError | None = None
 
     async def run(self) -> AsyncGenerator[LiveUpdate]:
         """Yield updates until the device has been silent for ``offline_after``."""
         self._loop = asyncio.get_running_loop()
-        data = await self._client.async_get_p1_data()
+        data = self._initial or await self._client.async_get_p1_data()
         snapshot_at = datetime.now(UTC)
         self._serial = data.meter_serial
+        rssi: int | None = None
         self._last_udp = self._loop.time()
         try:
             # Listen before the first yield, so no broadcast is missed while the consumer handles it.
@@ -142,8 +153,11 @@ class _Feed:
                     continue
                 if source is UpdateSource.P1DATA:
                     snapshot_at = datetime.now(UTC)
+                if isinstance(payload, P1Broadcast) and payload.rssi is not None:
+                    rssi = payload.rssi
                 data = merged
-                yield LiveUpdate(data, source, datetime.now(UTC), snapshot_at)
+                self._last_error = None
+                yield LiveUpdate(data, source, datetime.now(UTC), snapshot_at, rssi)
                 last_ok = self._loop.time()
         finally:
             await self._stop()
@@ -184,8 +198,10 @@ class _Feed:
             async with asyncio.timeout(max(offline_after - (self._loop.time() - last_ok), 0)):
                 source, payload = await self._queue.get()
         except TimeoutError as err:
+            if isinstance(self._last_error, VoltBridgeNoDataError):
+                raise self._last_error from None
             msg = f"no data from {self._client.host} for {offline_after:g} s"
-            raise VoltBridgeConnectionError(msg) from err
+            raise VoltBridgeConnectionError(msg) from (self._last_error or err)
         if source is None:
             raise payload
         return source, payload
@@ -208,6 +224,7 @@ class _Feed:
             try:
                 self._queue.put_nowait((UpdateSource.P1DATA, await self._client.async_get_p1_data()))
             except VoltBridgeError as err:
+                self._last_error = err
                 _LOGGER.debug("Snapshot poll failed: %s", err)
 
     async def _fallback(self) -> None:
@@ -225,6 +242,7 @@ class _Feed:
             try:
                 self._queue.put_nowait((UpdateSource.POWER, await self._client.async_get_power()))
             except VoltBridgeError as err:
+                self._last_error = err
                 _LOGGER.debug("Power fallback failed: %s", err)
 
 

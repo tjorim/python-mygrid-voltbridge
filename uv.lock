@@ -921,7 +921,7 @@ requires-dist = [{ name = "aiohttp", specifier = ">=3.14.5,<4" }]
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "build", specifier = ">=1.3,<2" },
+    { name = "build", specifier = ">=1.6.1,<2" },
     { name = "pytest", specifier = ">=9,<10" },
     { name = "pytest-asyncio", specifier = ">=1.4,<2" },
     { name = "pytest-cov", specifier = ">=7,<8" },

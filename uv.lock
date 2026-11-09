@@ -921,9 +921,9 @@ dev = [
     { name = "pytest", specifier = ">=9.2.0,<10" },
     { name = "pytest-asyncio", specifier = ">=1.4.1.post1,<2" },
     { name = "pytest-cov", specifier = ">=7.1.0,<8" },
-    { name = "ruff", specifier = ">=0.17,<0.18" },
+    { name = "ruff", specifier = ">=0.17.4,<0.18" },
     { name = "twine", specifier = ">=7,<8" },
-    { name = "ty", specifier = ">=0.0.90" },
+    { name = "ty", specifier = ">=0.0.99" },
 ]
 
 [[package]]

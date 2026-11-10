@@ -6,7 +6,19 @@ The API is not documented by the manufacturer. It was reverse-engineered from th
 
 ## Documentation
 
-See the [MyGrid documentation hub](https://tjorim.github.io/custom-mygrid/) for the integration guides and related projects. The [hub README](https://github.com/tjorim/custom-mygrid#readme) is also available as a fallback.
+Read the [Python library guide](https://tjorim.github.io/custom-mygrid/docs/voltbridge-python/)
+and [Home Assistant setup guide](https://tjorim.github.io/custom-mygrid/docs/voltbridge/)
+on the MyGrid documentation website.
+
+This README and the [protocol reference](docs/api.md) are authoritative for
+Python usage, device communication and protocol decoding. Device prerequisites
+and library validation belong here too. Edit the source in this repository;
+the website publishes reviewed, commit-pinned snapshots and may lag this branch.
+Home Assistant installation, entities, Energy dashboard configuration and
+automation examples belong in
+[`ha-mygrid-voltbridge`](https://github.com/tjorim/ha-mygrid-voltbridge).
+Link to those guides instead of maintaining another copy. See
+[CONTRIBUTING.md](CONTRIBUTING.md) for documentation changes.
 
 ## Query a meter
 

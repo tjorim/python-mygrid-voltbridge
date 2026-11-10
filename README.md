@@ -120,9 +120,7 @@ from mygrid_voltbridge import async_listen
 
 
 async def main() -> None:
-    transport = await async_listen(
-        lambda broadcast: print(broadcast.data.net_power), host="192.168.0.45"
-    )
+    transport = await async_listen(lambda broadcast: print(broadcast.data.net_power), host="192.168.0.45")
     try:
         await asyncio.sleep(60)  # Listen for one minute.
     finally:

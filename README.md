@@ -22,7 +22,14 @@ Link to those guides instead of maintaining another copy. See
 
 ## Query a meter
 
-The helper is read-only:
+The helper is read-only. After installing with pip, run:
+
+```sh
+mygrid-voltbridge 192.168.0.45
+mygrid-voltbridge 192.168.0.45 --power
+```
+
+From a checkout of this repository with uv installed:
 
 ```sh
 uv sync
@@ -82,13 +89,20 @@ All sources agreed to the watt. Gas and water meters report only every minute or
 `async_stream` combines them so you do not have to:
 
 ```python
+import asyncio
 from contextlib import aclosing
 
-from mygrid_voltbridge import async_stream
+from mygrid_voltbridge import VoltBridgeClient, async_stream
 
-async with aclosing(async_stream(client)) as stream:
-    async for update in stream:
-        print(update.source, update.data.net_power, update.data.gas)
+
+async def main() -> None:
+    async with VoltBridgeClient("192.168.0.45") as client:
+        async with aclosing(async_stream(client)) as stream:
+            async for update in stream:
+                print(update.source, update.data.net_power, update.data.gas)
+
+
+asyncio.run(main())
 ```
 
 Each `LiveUpdate` carries the merged `P1Data`, where it came from (`udp`, `power` or `p1data`), `snapshot_at`, the time of the HTTP snapshot underneath (gas can be that old), and `rssi`, the Wi-Fi signal strength in dBm from the last broadcast of your meter (`None` until one arrives; HTTP reads do not refresh it). The feed merges each broadcast from your meter into the last snapshot, reads `/api/power` once a second while UDP has been silent for 2 s (or could not start), refreshes `/api/p1data` every 5 s, skips failed reads, and ends the stream if nothing arrives for 30 s: with `VoltBridgeNoDataError` if the device answered but has no P1 data (cable unplugged), otherwise with `VoltBridgeConnectionError` chained from the last failed read. All of these are keyword arguments. Pass `initial=` with a `P1Data` you just read to start from it instead of the stream's own first `/api/p1data` read. On the test device it produced an update about every second with no gap over 2.5 s, where UDP alone had gaps of about 4 s.
@@ -100,11 +114,20 @@ If you prefer to wire it yourself, `broadcast.apply_to(snapshot)` and `reading.a
 The device also broadcasts its telegram over UDP roughly once per second, so you do not have to poll:
 
 ```python
+import asyncio
+
 from mygrid_voltbridge import async_listen
 
-transport = await async_listen(lambda b: print(b.data.net_power), host="192.168.0.45")
-# ...
-transport.close()
+
+async def main() -> None:
+    transport = await async_listen(lambda broadcast: print(broadcast.data.net_power), host="192.168.0.45")
+    try:
+        await asyncio.sleep(60)  # Listen for one minute.
+    finally:
+        transport.close()
+
+
+asyncio.run(main())
 ```
 
 `host` filters by the device's IP; invalid datagrams are dropped. To keep a polled snapshot fresh, overlay each broadcast with `broadcast.apply_to(snapshot)` (and `broadcast.apply_to_status(status)` for the signal strength): broadcasts from other meters are ignored, fields the stream lacks (gas) keep their polled value, and a datagram without phase data does not wipe the phases. Use `port=49492` for the one-minute average stream. `uv run mygrid-voltbridge 192.168.0.45 --watch` prints the live stream as JSON lines. The broadcast carries no gas reading; use `async_get_p1_data()` for that. Broadcasts must reach the host, so a container or VLAN may need host networking or a broadcast relay. See [docs/api.md](docs/api.md) for the format.
